@@ -1,0 +1,1086 @@
+"""Study, check-in, punishment, and room logic. All calendar days use Asia/Shanghai."""
+from __future__ import annotations
+
+import json
+import secrets
+import string
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from . import db, words as wordbank
+
+TZ = ZoneInfo("Asia/Shanghai")
+DEFAULT_PUNISHMENT = "昨天没打卡的人，要被催，并且下一天要多做一份惩罚任务"
+KNOW_STEPS = [3, 7, 15, 30, 60, 120, 240, 365]
+CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+POINTS = {"again": 1, "hard": 3, "know": 8, "quiz_ok": 10, "quiz_miss": 2, "checkin": 30}
+STREAK_BONUS = {3: 15, 7: 30, 14: 50}
+PUNISH_EXTRA_NEW = 20
+PUNISH_EXTRA_QUIZ = 1
+
+
+def now() -> datetime:
+    return datetime.now(TZ)
+
+
+def today_str(dt: datetime | None = None) -> str:
+    return (dt or now()).strftime("%Y-%m-%d")
+
+
+def add_days(date_str: str, days: int) -> str:
+    d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    return (d + timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def start_of_day_ts(date_str: str) -> int:
+    d = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=TZ)
+    return int(d.timestamp() * 1000)
+
+
+def greeting(dt: datetime | None = None) -> str:
+    h = (dt or now()).hour
+    if 5 <= h < 11:
+        return "早上好"
+    if 11 <= h < 13:
+        return "中午好"
+    if 13 <= h < 18:
+        return "下午好"
+    if 18 <= h < 22:
+        return "晚上好"
+    return "夜深了"
+
+
+def format_cn_date(dt: datetime | None = None) -> str:
+    d = dt or now()
+    weeks = "星期一 星期二 星期三 星期四 星期五 星期六 星期日".split()
+    return f"{d.month}月{d.day}日 {weeks[d.weekday()]}"
+
+
+def new_code() -> str:
+    for _ in range(20):
+        code = "".join(secrets.choice(CODE_CHARS) for _ in range(6))
+        if not db.fetchone("SELECT id FROM rooms WHERE code=?", (code,)):
+            return code
+    raise RuntimeError("无法生成邀请码")
+
+
+def new_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _loads(s, default):
+    try:
+        return json.loads(s) if s else default
+    except Exception:
+        return default
+
+
+def ensure_quiz_stats(member_id: int) -> dict:
+    row = db.fetchone("SELECT * FROM quiz_stats WHERE member_id=?", (member_id,))
+    if not row:
+        db.execute(
+            "INSERT INTO quiz_stats (member_id) VALUES (?)",
+            (member_id,),
+            commit=True,
+        )
+        row = db.fetchone("SELECT * FROM quiz_stats WHERE member_id=?", (member_id,))
+    return row
+
+
+def get_member_by_token(token: str) -> dict | None:
+    return db.fetchone("SELECT * FROM members WHERE token=?", (token,))
+
+
+def get_room(room_id: int) -> dict | None:
+    return db.fetchone("SELECT * FROM rooms WHERE id=?", (room_id,))
+
+
+def room_members(room_id: int) -> list[dict]:
+    return db.fetchall("SELECT * FROM members WHERE room_id=? ORDER BY id", (room_id,))
+
+
+def custom_words(member_id: int) -> list[dict]:
+    rows = db.fetchall(
+        "SELECT * FROM custom_words WHERE member_id=? ORDER BY created_at DESC",
+        (member_id,),
+    )
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "id": r["id"],
+                "word": r["word"],
+                "ipa": r["ipa"],
+                "meaning": r["meaning"],
+                "example": r["example"],
+                "exampleZh": r["example_zh"],
+                "custom": True,
+            }
+        )
+    return out
+
+
+def all_member_words(member_id: int) -> list[dict]:
+    customs = custom_words(member_id)
+    seen = {w["word"].lower() for w in customs}
+    bank = [w for w in wordbank.all_words() if w["word"].lower() not in seen]
+    return customs + bank
+
+
+def word_by_id(member_id: int, word_id: str) -> dict | None:
+    if word_id.startswith("c_"):
+        row = db.fetchone(
+            "SELECT * FROM custom_words WHERE id=? AND member_id=?",
+            (word_id, member_id),
+        )
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "word": row["word"],
+            "ipa": row["ipa"],
+            "meaning": row["meaning"],
+            "example": row["example"],
+            "exampleZh": row["example_zh"],
+            "custom": True,
+        }
+    return wordbank.get_word(word_id)
+
+
+def get_progress_map(member_id: int) -> dict[str, dict]:
+    rows = db.fetchall("SELECT * FROM word_progress WHERE member_id=?", (member_id,))
+    return {r["word_id"]: r for r in rows}
+
+
+def status_of(rec: dict | None) -> str:
+    if not rec or not rec.get("reps"):
+        return "新词"
+    if rec.get("status") == "mastered" or (rec.get("interval_days") or 0) >= 15:
+        return "已掌握"
+    return "学习中"
+
+
+def process_misses(room_id: int) -> None:
+    """After 00:00, mark members who missed yesterday and assign punishment."""
+    today = today_str()
+    yesterday = add_days(today, -1)
+    for m in room_members(room_id):
+        if m["joined_date"] > yesterday:
+            # Joined today — cannot have missed yesterday.
+            if m["missed_yesterday"] or m["punishment_pending"]:
+                if m["last_checkin"] == today:
+                    db.execute(
+                        "UPDATE members SET missed_yesterday=0, punishment_pending=0 WHERE id=?",
+                        (m["id"],),
+                        commit=True,
+                    )
+            continue
+        checked_yesterday = m["last_checkin"] == yesterday
+        checked_today = m["last_checkin"] == today
+        if checked_yesterday or checked_today:
+            if m["missed_yesterday"] and checked_today:
+                # Already made up today; leave flags until we clear on check-in (already cleared).
+                pass
+            if checked_yesterday and not checked_today:
+                if m["missed_yesterday"] or m["punishment_pending"]:
+                    db.execute(
+                        "UPDATE members SET missed_yesterday=0, punishment_pending=0, miss_processed_on=? WHERE id=?",
+                        (today, m["id"]),
+                        commit=True,
+                    )
+            continue
+        # Missed yesterday (and has not checked in today).
+        if m["miss_processed_on"] == today:
+            continue
+        db.execute(
+            """UPDATE members
+               SET streak=0, punishment_pending=1, missed_yesterday=1, miss_processed_on=?
+               WHERE id=?""",
+            (today, m["id"]),
+            commit=True,
+        )
+
+
+def ensure_daily(member: dict) -> dict:
+    today = today_str()
+    row = db.fetchone(
+        "SELECT * FROM daily WHERE member_id=? AND date=?",
+        (member["id"], today),
+    )
+    if not row:
+        punishment = 1 if member.get("punishment_pending") or member.get("missed_yesterday") else 0
+        db.execute(
+            """INSERT INTO daily (member_id, date, punishment, quiz_target)
+               VALUES (?, ?, ?, ?)""",
+            (member["id"], today, punishment, 1 + (PUNISH_EXTRA_QUIZ if punishment else 0)),
+            commit=True,
+        )
+        row = db.fetchone(
+            "SELECT * FROM daily WHERE member_id=? AND date=?",
+            (member["id"], today),
+        )
+    elif (member.get("punishment_pending") or member.get("missed_yesterday")) and not row["punishment"] and not row["checkin"]:
+        # Miss processing happened after the daily row was created (e.g. right after midnight).
+        extra_quiz = PUNISH_EXTRA_QUIZ
+        # Recompute new-word target so the extra 20 punishment words are included.
+        db.execute(
+            "UPDATE daily SET punishment=1, quiz_target=?, new_target=NULL WHERE member_id=? AND date=?",
+            (1 + extra_quiz, member["id"], today),
+            commit=True,
+        )
+        row = db.fetchone(
+            "SELECT * FROM daily WHERE member_id=? AND date=?",
+            (member["id"], today),
+        )
+    return row
+
+
+def due_and_new(member: dict, now_ms: int | None = None):
+    now_ms = now_ms or int(now().timestamp() * 1000)
+    progress = get_progress_map(member["id"])
+    allw = all_member_words(member["id"])
+    due = []
+    fresh = []
+    for w in allw:
+        rec = progress.get(w["id"])
+        if rec and rec["reps"] and rec["due_ts"] and rec["due_ts"] <= now_ms:
+            due.append((w, rec))
+        if not rec or not rec["reps"]:
+            fresh.append(w)
+    due.sort(key=lambda x: x[1]["due_ts"] or 0)
+    return due, fresh, progress
+
+
+def freeze_targets(member: dict, daily: dict) -> dict:
+    """Freeze today's review/new targets on first computation."""
+    if daily["review_target"] is not None and daily["new_target"] is not None:
+        return daily
+    due, fresh, _ = due_and_new(member)
+    cap = max(5, int(member["review_cap"] or 40))
+    daily_new = max(1, int(member["daily_new"] or 20))
+    punish = 1 if daily["punishment"] else 0
+    review_target = min(len(due), cap)
+    new_goal = daily_new + (PUNISH_EXTRA_NEW if punish else 0)
+    new_target = min(len(fresh), new_goal)
+    db.execute(
+        "UPDATE daily SET review_target=?, new_target=? WHERE member_id=? AND date=?",
+        (review_target, new_target, member["id"], daily["date"]),
+        commit=True,
+    )
+    daily = db.fetchone(
+        "SELECT * FROM daily WHERE member_id=? AND date=?",
+        (member["id"], daily["date"]),
+    )
+    return daily
+
+
+def plan_for(member: dict) -> dict:
+    daily = freeze_targets(member, ensure_daily(member))
+    due, fresh, _ = due_and_new(member)
+    reviewed_due = _loads(daily["reviewed_due_json"], [])
+    new_intro = _loads(daily["new_introduced_json"], [])
+    review_target = daily["review_target"] or 0
+    new_target = daily["new_target"] or 0
+    due_done = min(len(reviewed_due), review_target)
+    new_done = min(len(new_intro), new_target)
+    due_left = max(0, review_target - due_done)
+    new_left = max(0, new_target - new_done)
+    remaining_new = fresh[:new_left]
+    remaining_due = [w for w, _ in due if w["id"] not in reviewed_due][: max(5, int(member["review_cap"] or 40))]
+    vocab_done = bool(daily["vocab_done"] or (due_left == 0 and new_left == 0 and (review_target + new_target > 0 or daily["vocab_done"])))
+    # If there is literally nothing to do (empty bank?), treat vocab as done.
+    if review_target == 0 and new_target == 0:
+        vocab_done = True
+    quizzes_done = daily["quizzes_done"] or 0
+    quiz_target = daily["quiz_target"] or 1
+    quiz_done = quizzes_done >= quiz_target
+    can_checkin = bool(vocab_done and quiz_done and not daily["checkin"])
+    return {
+        "date": daily["date"],
+        "dueTotal": review_target,
+        "dueDone": due_done,
+        "dueLeft": due_left,
+        "newTotal": new_target,
+        "newDone": new_done,
+        "newLeft": new_left,
+        "quizDone": quizzes_done,
+        "quizTarget": quiz_target,
+        "vocabDone": vocab_done,
+        "quizComplete": quiz_done,
+        "punishment": bool(daily["punishment"]),
+        "checkin": bool(daily["checkin"]),
+        "canCheckin": can_checkin,
+        "remainingDue": remaining_due,
+        "remainingNew": remaining_new,
+        "daily": daily,
+    }
+
+
+def build_session(member: dict) -> list[dict]:
+    plan = plan_for(member)
+    items = []
+    for w in plan["remainingDue"]:
+        items.append({"word": wordbank.public_word(w), "kind": "review"})
+    for w in plan["remainingNew"]:
+        items.append({"word": wordbank.public_word(w), "kind": "new", "punishment": bool(plan["punishment"])})
+    return items
+
+
+def next_know_interval(prev: int) -> int:
+    if not prev or prev < 3:
+        return 3
+    for step in KNOW_STEPS:
+        if prev < step:
+            return step
+    return KNOW_STEPS[-1]
+
+
+def add_points(member: dict, daily: dict, amount: int) -> None:
+    if not amount:
+        return
+    db.execute(
+        "UPDATE members SET points_total=points_total+? WHERE id=?",
+        (amount, member["id"]),
+    )
+    db.execute(
+        "UPDATE daily SET points=points+? WHERE member_id=? AND date=?",
+        (amount, member["id"], daily["date"]),
+    )
+    db.connect().commit()
+    member["points_total"] = (member["points_total"] or 0) + amount
+    daily["points"] = (daily["points"] or 0) + amount
+
+
+def maybe_streak_bonuses(member: dict, daily: dict) -> list[dict]:
+    bonuses = _loads(member["streak_bonuses"], {"3": False, "7": False, "14": False})
+    extras = []
+    for day, pts in STREAK_BONUS.items():
+        key = str(day)
+        if member["streak"] >= day and not bonuses.get(key):
+            bonuses[key] = True
+            add_points(member, daily, pts)
+            extras.append({"day": day, "points": pts})
+    if extras:
+        db.execute(
+            "UPDATE members SET streak_bonuses=? WHERE id=?",
+            (json.dumps(bonuses, ensure_ascii=False), member["id"]),
+            commit=True,
+        )
+        member["streak_bonuses"] = json.dumps(bonuses)
+    return extras
+
+
+def try_checkin(member: dict) -> dict:
+    plan = plan_for(member)
+    daily = plan["daily"]
+    if daily["checkin"]:
+        return {"ok": True, "already": True, "bonus": 0, "streakBonuses": [], "streak": member["streak"]}
+    if not plan["vocabDone"] or not plan["quizComplete"]:
+        return {"ok": False, "already": False, "error": "还没完成今天的打卡任务"}
+    today = today_str()
+    yesterday = add_days(today, -1)
+    last = member["last_checkin"]
+    if last == yesterday:
+        streak = (member["streak"] or 0) + 1
+    else:
+        streak = 1
+    db.execute(
+        """UPDATE members
+           SET last_checkin=?, streak=?, missed_yesterday=0, punishment_pending=0
+           WHERE id=?""",
+        (today, streak, member["id"]),
+        commit=True,
+    )
+    member["last_checkin"] = today
+    member["streak"] = streak
+    member["missed_yesterday"] = 0
+    member["punishment_pending"] = 0
+    add_points(member, daily, POINTS["checkin"])
+    db.execute(
+        "UPDATE daily SET checkin=1, vocab_done=1 WHERE member_id=? AND date=?",
+        (member["id"], today),
+        commit=True,
+    )
+    extras = maybe_streak_bonuses(member, daily)
+    return {"ok": True, "already": False, "bonus": POINTS["checkin"], "streakBonuses": extras, "streak": streak}
+
+
+def rate_word(member: dict, word_id: str, rating: str) -> dict:
+    if rating not in ("again", "hard", "know"):
+        raise ValueError("无效的评分")
+    word = word_by_id(member["id"], word_id)
+    if not word:
+        raise ValueError("找不到这个单词")
+    today = today_str()
+    daily = freeze_targets(member, ensure_daily(member))
+    rec = db.fetchone(
+        "SELECT * FROM word_progress WHERE member_id=? AND word_id=?",
+        (member["id"], word_id),
+    )
+    was_new = not rec or not rec["reps"]
+    now_ms = int(now().timestamp() * 1000)
+    if not rec:
+        rec = {
+            "member_id": member["id"],
+            "word_id": word_id,
+            "interval_days": 0,
+            "due_ts": 0,
+            "reps": 0,
+            "lapses": 0,
+            "status": "new",
+            "last_rating": None,
+            "last_reviewed": None,
+            "introduced_on": None,
+        }
+        db.execute(
+            """INSERT INTO word_progress (member_id, word_id, interval_days, due_ts, reps, lapses, status)
+               VALUES (?, ?, 0, 0, 0, 0, 'new')""",
+            (member["id"], word_id),
+            commit=True,
+        )
+    interval = rec["interval_days"] or 0
+    lapses = rec["lapses"] or 0
+    if rating == "again":
+        interval = 0
+        due_ts = now_ms + 10 * 60 * 1000
+        lapses += 1
+        status = "learning"
+    elif rating == "hard":
+        interval = 1
+        due_ts = start_of_day_ts(add_days(today, 1))
+        status = "learning"
+    else:
+        interval = next_know_interval(interval)
+        due_ts = start_of_day_ts(add_days(today, interval))
+        status = "mastered" if interval >= 15 else "learning"
+    introduced = rec["introduced_on"] or (today if was_new else rec["introduced_on"])
+    db.execute(
+        """UPDATE word_progress
+           SET interval_days=?, due_ts=?, reps=reps+1, lapses=?, status=?, last_rating=?, last_reviewed=?, introduced_on=?
+           WHERE member_id=? AND word_id=?""",
+        (interval, due_ts, lapses, status, rating, now_ms, introduced, member["id"], word_id),
+        commit=True,
+    )
+
+    due_ids = _loads(daily["reviewed_due_json"], [])
+    new_ids = _loads(daily["new_introduced_json"], [])
+    all_ids = _loads(daily["reviewed_all_json"], [])
+    if was_new:
+        if word_id not in new_ids:
+            new_ids.append(word_id)
+    else:
+        if word_id not in due_ids:
+            due_ids.append(word_id)
+    if word_id not in all_ids:
+        all_ids.append(word_id)
+    db.execute(
+        """UPDATE daily SET reviewed_due_json=?, new_introduced_json=?, reviewed_all_json=?
+           WHERE member_id=? AND date=?""",
+        (json.dumps(due_ids), json.dumps(new_ids), json.dumps(all_ids), member["id"], today),
+        commit=True,
+    )
+    daily["reviewed_due_json"] = json.dumps(due_ids)
+    daily["new_introduced_json"] = json.dumps(new_ids)
+    gained = POINTS[rating]
+    add_points(member, daily, gained)
+
+    # Mark vocab done if targets are cleared.
+    plan = plan_for(member)
+    if plan["vocabDone"] and not daily["vocab_done"]:
+        db.execute(
+            "UPDATE daily SET vocab_done=1 WHERE member_id=? AND date=?",
+            (member["id"], today),
+            commit=True,
+        )
+    check = try_checkin(member) if plan["vocabDone"] and plan["quizComplete"] else {"ok": False, "bonus": 0, "streakBonuses": []}
+    return {
+        "gained": gained,
+        "wasNew": was_new,
+        "status": status,
+        "interval": interval,
+        "checkin": check,
+        "plan": plan_for(member),
+    }
+
+
+def complete_vocab_session(member: dict) -> dict:
+    plan = plan_for(member)
+    today = today_str()
+    if plan["dueLeft"] == 0 and plan["newLeft"] == 0:
+        db.execute(
+            "UPDATE daily SET vocab_done=1 WHERE member_id=? AND date=?",
+            (member["id"], today),
+            commit=True,
+        )
+    check = try_checkin(member)
+    return {"plan": plan_for(member), "checkin": check}
+
+
+def submit_quiz(member: dict, answers: list[dict], mode: str = "normal") -> dict:
+    daily = freeze_targets(member, ensure_daily(member))
+    today = today_str()
+    stats = ensure_quiz_stats(member["id"])
+    wrong = _loads(stats["wrong_book_json"], {})
+    recent = _loads(stats["recent_json"], [])
+    correct_n = 0
+    points = 0
+    for a in answers:
+        qid = a.get("id")
+        ok = bool(a.get("correct"))
+        snap = a.get("snapshot") or {}
+        if ok:
+            correct_n += 1
+            points += POINTS["quiz_ok"]
+            if qid in wrong:
+                wrong[qid]["correctStreak"] = (wrong[qid].get("correctStreak") or 0) + 1
+                if wrong[qid]["correctStreak"] >= 2:
+                    del wrong[qid]
+        else:
+            points += POINTS["quiz_miss"]
+            prev = wrong.get(qid) or {"misses": 0, "correctStreak": 0}
+            wrong[qid] = {
+                "id": qid,
+                "misses": (prev.get("misses") or 0) + 1,
+                "correctStreak": 0,
+                "lastWrong": int(now().timestamp() * 1000),
+                "snapshot": snap,
+            }
+        if qid:
+            recent.append(qid)
+    recent = recent[-80:]
+    db.execute(
+        """UPDATE quiz_stats
+           SET taken=taken+1, correct=correct+?, answered=answered+?, recent_json=?, wrong_book_json=?
+           WHERE member_id=?""",
+        (
+            correct_n,
+            len(answers),
+            json.dumps(recent),
+            json.dumps(wrong, ensure_ascii=False),
+            member["id"],
+        ),
+        commit=True,
+    )
+    add_points(member, daily, points)
+    db.execute(
+        "UPDATE daily SET quizzes_done=quizzes_done+1 WHERE member_id=? AND date=?",
+        (member["id"], today),
+        commit=True,
+    )
+    check = try_checkin(member)
+    return {
+        "correct": correct_n,
+        "total": len(answers),
+        "gained": points,
+        "checkin": check,
+        "plan": plan_for(member),
+        "wrongCount": len(wrong),
+    }
+
+
+def wrong_book_questions(member: dict, n: int = 10) -> list[dict]:
+    stats = ensure_quiz_stats(member["id"])
+    wrong = _loads(stats["wrong_book_json"], {})
+    items = []
+    for rec in sorted(wrong.values(), key=lambda x: x.get("lastWrong") or 0, reverse=True):
+        snap = rec.get("snapshot")
+        if snap and snap.get("choices"):
+            items.append(snap)
+    return items[:n]
+
+
+def week_history(member_id: int) -> list[dict]:
+    today = today_str()
+    days = []
+    for i in range(6, -1, -1):
+        date = add_days(today, -i)
+        row = db.fetchone(
+            "SELECT checkin FROM daily WHERE member_id=? AND date=?",
+            (member_id, date),
+        )
+        # also consider last_checkin if daily missing
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        label = "一二三四五六日"[dt.weekday()]
+        days.append(
+            {
+                "date": date,
+                "studied": bool(row and row["checkin"]),
+                "isToday": date == today,
+                "label": label,
+            }
+        )
+    return days
+
+
+def stats_for(member: dict) -> dict:
+    progress = get_progress_map(member["id"])
+    started = sum(1 for r in progress.values() if r.get("reps"))
+    mastered = sum(
+        1
+        for r in progress.values()
+        if r.get("reps") and (r.get("status") == "mastered" or (r.get("interval_days") or 0) >= 15)
+    )
+    q = ensure_quiz_stats(member["id"])
+    answered = q["answered"] or 0
+    accuracy = round(q["correct"] * 100 / answered) if answered else None
+    total = member["points_total"] or 0
+    level = total // 100 + 1
+    into = total % 100
+    to_next = 100 if (into == 0 and total > 0) else (100 - into)
+    into_bar = 0 if (into == 0 and total > 0) else into
+    today = today_str()
+    daily = db.fetchone(
+        "SELECT * FROM daily WHERE member_id=? AND date=?",
+        (member["id"], today),
+    )
+    wrong = _loads(q["wrong_book_json"], {})
+    return {
+        "started": started,
+        "mastered": mastered,
+        "quizzes": q["taken"] or 0,
+        "accuracy": accuracy,
+        "todayPoints": (daily["points"] if daily else 0) or 0,
+        "totalPoints": total,
+        "level": level,
+        "toNext": to_next,
+        "intoBar": into_bar,
+        "streak": member["streak"] or 0,
+        "wrongCount": len(wrong),
+    }
+
+
+def member_public(member: dict, include_plan: bool = False) -> dict:
+    st = stats_for(member)
+    today = today_str()
+    daily = db.fetchone(
+        "SELECT * FROM daily WHERE member_id=? AND date=?",
+        (member["id"], today),
+    )
+    checked = bool(daily and daily["checkin"])
+    out = {
+        "id": member["id"],
+        "name": member["name"],
+        "points": st["totalPoints"],
+        "level": st["level"],
+        "streak": st["streak"],
+        "checkinToday": checked,
+        "missedYesterday": bool(member.get("missed_yesterday")),
+        "punishmentPending": bool(member.get("punishment_pending")) and not checked,
+        "week": week_history(member["id"]),
+        "stats": st,
+        "settings": {"dailyNew": member["daily_new"], "reviewCap": member["review_cap"]},
+        "joinedDate": member["joined_date"],
+    }
+    if include_plan:
+        plan = plan_for(member)
+        # Don't send full remaining word objects in the general state if huge; include counts only plus leftover ids length
+        out["plan"] = {k: v for k, v in plan.items() if k not in ("remainingDue", "remainingNew", "daily")}
+    return out
+
+
+def room_state(member: dict) -> dict:
+    process_misses(member["room_id"])
+    # reload after miss processing
+    member = db.fetchone("SELECT * FROM members WHERE id=?", (member["id"],))
+    room = get_room(member["room_id"])
+    people = room_members(member["room_id"])
+    me = next(p for p in people if p["id"] == member["id"])
+    partner = next((p for p in people if p["id"] != member["id"]), None)
+    me_pub = member_public(me, include_plan=True)
+    partner_pub = member_public(partner, include_plan=False) if partner else None
+    banners = []
+    if partner_pub and partner_pub["missedYesterday"]:
+        banners.append(
+            {
+                "type": "partner-missed",
+                "title": f"{partner_pub['name']}昨天没打卡了，按约定去催一下！",
+                "text": room["punishment_text"],
+            }
+        )
+    if me_pub["missedYesterday"] and not me_pub["checkinToday"]:
+        banners.append(
+            {
+                "type": "self-missed",
+                "title": "你昨天没打卡",
+                "text": "今天需要先完成惩罚任务（额外 20 个单词 + 多做一组题），再加上平时的任务，才能打卡。",
+            }
+        )
+    return {
+        "today": today_str(),
+        "greeting": greeting(),
+        "dateLabel": format_cn_date(),
+        "room": {
+            "code": room["code"],
+            "punishmentText": room["punishment_text"],
+            "friendPlaceholder": room["friend_placeholder"],
+        },
+        "me": me_pub,
+        "partner": partner_pub,
+        "banners": banners,
+        "wordCount": wordbank.word_count(),
+        "grammarCount": wordbank.grammar_count(),
+    }
+
+
+def create_room(name: str, friend_placeholder: str | None, punishment_text: str | None) -> dict:
+    name = (name or "").strip()
+    if not name or len(name) > 16:
+        raise ValueError("请填写 1–16 个字的昵称")
+    text = (punishment_text or "").strip() or DEFAULT_PUNISHMENT
+    if len(text) > 200:
+        raise ValueError("惩罚约定请控制在 200 字以内")
+    placeholder = (friend_placeholder or "").strip() or None
+    if placeholder and len(placeholder) > 16:
+        raise ValueError("朋友的名字请控制在 16 个字以内")
+    today = today_str()
+    code = new_code()
+    token = new_token()
+    ts = now().isoformat(timespec="seconds")
+    cur = db.execute(
+        "INSERT INTO rooms (code, punishment_text, friend_placeholder, created_at) VALUES (?, ?, ?, ?)",
+        (code, text, placeholder, ts),
+        commit=True,
+    )
+    room_id = cur.lastrowid
+    cur = db.execute(
+        """INSERT INTO members (room_id, name, token, joined_date, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (room_id, name, token, today, ts),
+        commit=True,
+    )
+    db.execute("INSERT INTO quiz_stats (member_id) VALUES (?)", (cur.lastrowid,), commit=True)
+    member = db.fetchone("SELECT * FROM members WHERE token=?", (token,))
+    return {"token": token, "state": room_state(member)}
+
+
+def join_room(code: str, name: str) -> dict:
+    name = (name or "").strip()
+    code = (code or "").strip().upper()
+    if not name or len(name) > 16:
+        raise ValueError("请填写 1–16 个字的昵称")
+    if len(code) != 6:
+        raise ValueError("邀请码应是 6 位")
+    room = db.fetchone("SELECT * FROM rooms WHERE code=?", (code,))
+    if not room:
+        raise ValueError("找不到这个邀请码，请检查后再试")
+    people = room_members(room["id"])
+    existing = next((p for p in people if p["name"] == name), None)
+    token = new_token()
+    today = today_str()
+    ts = now().isoformat(timespec="seconds")
+    if existing:
+        # Reclaim this name in the room (same person, new browser).
+        db.execute("UPDATE members SET token=? WHERE id=?", (token, existing["id"]), commit=True)
+        member = db.fetchone("SELECT * FROM members WHERE id=?", (existing["id"],))
+        return {"token": token, "state": room_state(member), "reclaimed": True}
+    if len(people) >= 2:
+        raise ValueError("这个房间已经有两个人了。如果是你本人，请填写当时用的同一个昵称。")
+    cur = db.execute(
+        """INSERT INTO members (room_id, name, token, joined_date, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (room["id"], name, token, today, ts),
+        commit=True,
+    )
+    db.execute("INSERT INTO quiz_stats (member_id) VALUES (?)", (cur.lastrowid,), commit=True)
+    member = db.fetchone("SELECT * FROM members WHERE token=?", (token,))
+    return {"token": token, "state": room_state(member), "reclaimed": False}
+
+
+def update_settings(member: dict, data: dict) -> dict:
+    fields = []
+    params = []
+    if "name" in data and data["name"] is not None:
+        name = str(data["name"]).strip()
+        if not name or len(name) > 16:
+            raise ValueError("昵称请控制在 1–16 个字")
+        # unique in room
+        clash = db.fetchone(
+            "SELECT id FROM members WHERE room_id=? AND name=? AND id!=?",
+            (member["room_id"], name, member["id"]),
+        )
+        if clash:
+            raise ValueError("房间里已经有人用这个昵称了")
+        fields.append("name=?")
+        params.append(name)
+    if "dailyNew" in data and data["dailyNew"] is not None:
+        n = int(data["dailyNew"])
+        n = min(40, max(5, n))
+        fields.append("daily_new=?")
+        params.append(n)
+    if "reviewCap" in data and data["reviewCap"] is not None:
+        n = int(data["reviewCap"])
+        n = min(80, max(5, n))
+        fields.append("review_cap=?")
+        params.append(n)
+    if fields:
+        params.append(member["id"])
+        db.execute(f"UPDATE members SET {', '.join(fields)} WHERE id=?", params, commit=True)
+        # Recompute today's targets if not started
+        today = today_str()
+        daily = db.fetchone("SELECT * FROM daily WHERE member_id=? AND date=?", (member["id"], today))
+        if daily and not _loads(daily["reviewed_all_json"], []) and not daily["checkin"]:
+            db.execute(
+                "UPDATE daily SET review_target=NULL, new_target=NULL WHERE member_id=? AND date=?",
+                (member["id"], today),
+                commit=True,
+            )
+    if "punishmentText" in data and data["punishmentText"] is not None:
+        text = str(data["punishmentText"]).strip() or DEFAULT_PUNISHMENT
+        if len(text) > 200:
+            raise ValueError("惩罚约定请控制在 200 字以内")
+        db.execute("UPDATE rooms SET punishment_text=? WHERE id=?", (text, member["room_id"]), commit=True)
+    member = db.fetchone("SELECT * FROM members WHERE id=?", (member["id"],))
+    return room_state(member)
+
+
+def list_words(member: dict, q: str, status: str, page: int, page_size: int) -> dict:
+    progress = get_progress_map(member["id"])
+    allw = all_member_words(member["id"])
+    q = (q or "").strip().lower()
+    items = []
+    for w in allw:
+        rec = progress.get(w["id"])
+        st = status_of(rec)
+        if status and status != "全部" and st != status:
+            continue
+        if q:
+            blob = " ".join([w["word"], w.get("meaning") or "", w.get("ipa") or ""]).lower()
+            if q not in blob:
+                continue
+        items.append(
+            {
+                **wordbank.public_word(w),
+                "status": st,
+            }
+        )
+    total = len(items)
+    page = max(1, int(page or 1))
+    page_size = min(100, max(10, int(page_size or 40)))
+    start = (page - 1) * page_size
+    return {"total": total, "page": page, "pageSize": page_size, "items": items[start : start + page_size]}
+
+
+def add_custom_word(member: dict, data: dict) -> dict:
+    word = (data.get("word") or "").strip()
+    meaning = (data.get("meaning") or "").strip()
+    if not word or not meaning:
+        raise ValueError("请填写英文单词和中文意思")
+    allw = all_member_words(member["id"])
+    if any(w["word"].lower() == word.lower() for w in allw):
+        raise ValueError("词库里已经有这个单词了")
+    wid = "c_" + secrets.token_hex(5)
+    db.execute(
+        """INSERT INTO custom_words (id, member_id, word, ipa, meaning, example, example_zh, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            wid,
+            member["id"],
+            word,
+            (data.get("ipa") or "").strip(),
+            meaning,
+            (data.get("example") or "").strip(),
+            (data.get("exampleZh") or data.get("example_zh") or "").strip(),
+            now().isoformat(timespec="seconds"),
+        ),
+        commit=True,
+    )
+    return {"ok": True, "word": word_by_id(member["id"], wid)}
+
+
+def update_custom_word(member: dict, word_id: str, data: dict) -> dict:
+    row = db.fetchone(
+        "SELECT * FROM custom_words WHERE id=? AND member_id=?",
+        (word_id, member["id"]),
+    )
+    if not row:
+        raise ValueError("找不到这个自定义单词")
+    word = (data.get("word") or "").strip()
+    meaning = (data.get("meaning") or "").strip()
+    if not word or not meaning:
+        raise ValueError("请填写英文单词和中文意思")
+    clash = next(
+        (w for w in all_member_words(member["id"]) if w["id"] != word_id and w["word"].lower() == word.lower()),
+        None,
+    )
+    if clash:
+        raise ValueError("词库里已经有这个单词了")
+    db.execute(
+        """UPDATE custom_words SET word=?, ipa=?, meaning=?, example=?, example_zh=?
+           WHERE id=? AND member_id=?""",
+        (
+            word,
+            (data.get("ipa") or "").strip(),
+            meaning,
+            (data.get("example") or "").strip(),
+            (data.get("exampleZh") or data.get("example_zh") or "").strip(),
+            word_id,
+            member["id"],
+        ),
+        commit=True,
+    )
+    return {"ok": True, "word": word_by_id(member["id"], word_id)}
+
+
+def delete_custom_word(member: dict, word_id: str) -> dict:
+    db.execute(
+        "DELETE FROM custom_words WHERE id=? AND member_id=?",
+        (word_id, member["id"]),
+        commit=True,
+    )
+    db.execute(
+        "DELETE FROM word_progress WHERE member_id=? AND word_id=?",
+        (member["id"], word_id),
+        commit=True,
+    )
+    return {"ok": True}
+
+
+def export_member(member: dict) -> dict:
+    progress = db.fetchall("SELECT * FROM word_progress WHERE member_id=?", (member["id"],))
+    customs = db.fetchall("SELECT * FROM custom_words WHERE member_id=?", (member["id"],))
+    daily = db.fetchall("SELECT * FROM daily WHERE member_id=?", (member["id"],))
+    quiz = ensure_quiz_stats(member["id"])
+    return {
+        "app": "进步 Progress",
+        "exportedAt": now().isoformat(timespec="seconds"),
+        "member": {
+            "name": member["name"],
+            "token": member["token"],
+            "dailyNew": member["daily_new"],
+            "reviewCap": member["review_cap"],
+            "pointsTotal": member["points_total"],
+            "streak": member["streak"],
+            "lastCheckin": member["last_checkin"],
+            "streakBonuses": member["streak_bonuses"],
+        },
+        "room": {"code": get_room(member["room_id"])["code"]},
+        "progress": progress,
+        "customWords": customs,
+        "daily": daily,
+        "quiz": quiz,
+    }
+
+
+def import_member(member: dict, payload: dict) -> dict:
+    data = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+    if not isinstance(data, dict) or "member" not in data:
+        raise ValueError("文件内容不像是「进步」的备份")
+    mid = member["id"]
+    # Replace this member's study data, keep identity/room.
+    m = data["member"]
+    db.execute(
+        """UPDATE members SET daily_new=?, review_cap=?, points_total=?, streak=?, last_checkin=?, streak_bonuses=?
+           WHERE id=?""",
+        (
+            int(m.get("dailyNew") or member["daily_new"]),
+            int(m.get("reviewCap") or member["review_cap"]),
+            int(m.get("pointsTotal") or 0),
+            int(m.get("streak") or 0),
+            m.get("lastCheckin"),
+            m.get("streakBonuses") or member["streak_bonuses"],
+            mid,
+        ),
+    )
+    db.execute("DELETE FROM word_progress WHERE member_id=?", (mid,))
+    db.execute("DELETE FROM custom_words WHERE member_id=?", (mid,))
+    db.execute("DELETE FROM daily WHERE member_id=?", (mid,))
+    for rec in data.get("progress") or []:
+        db.execute(
+            """INSERT INTO word_progress (member_id, word_id, interval_days, due_ts, reps, lapses, status, last_rating, last_reviewed, introduced_on)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                mid,
+                rec["word_id"],
+                rec.get("interval_days") or 0,
+                rec.get("due_ts") or 0,
+                rec.get("reps") or 0,
+                rec.get("lapses") or 0,
+                rec.get("status") or "learning",
+                rec.get("last_rating"),
+                rec.get("last_reviewed"),
+                rec.get("introduced_on"),
+            ),
+        )
+    for rec in data.get("customWords") or []:
+        db.execute(
+            """INSERT OR REPLACE INTO custom_words (id, member_id, word, ipa, meaning, example, example_zh, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rec["id"] if str(rec.get("id", "")).startswith("c_") else "c_" + secrets.token_hex(5),
+                mid,
+                rec["word"],
+                rec.get("ipa") or "",
+                rec["meaning"],
+                rec.get("example") or "",
+                rec.get("example_zh") or rec.get("exampleZh") or "",
+                rec.get("created_at") or now().isoformat(timespec="seconds"),
+            ),
+        )
+    for rec in data.get("daily") or []:
+        db.execute(
+            """INSERT OR REPLACE INTO daily (member_id, date, review_target, new_target, quiz_target, reviewed_due_json, new_introduced_json, reviewed_all_json, vocab_done, quizzes_done, checkin, punishment, points)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                mid,
+                rec["date"],
+                rec.get("review_target"),
+                rec.get("new_target"),
+                rec.get("quiz_target") or 1,
+                rec.get("reviewed_due_json") or "[]",
+                rec.get("new_introduced_json") or "[]",
+                rec.get("reviewed_all_json") or "[]",
+                rec.get("vocab_done") or 0,
+                rec.get("quizzes_done") or 0,
+                rec.get("checkin") or 0,
+                rec.get("punishment") or 0,
+                rec.get("points") or 0,
+            ),
+        )
+    quiz = data.get("quiz") or {}
+    db.execute(
+        """INSERT OR REPLACE INTO quiz_stats (member_id, taken, correct, answered, recent_json, wrong_book_json)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            mid,
+            quiz.get("taken") or 0,
+            quiz.get("correct") or 0,
+            quiz.get("answered") or 0,
+            quiz.get("recent_json") or "[]",
+            quiz.get("wrong_book_json") or "{}",
+        ),
+    )
+    db.connect().commit()
+    return room_state(db.fetchone("SELECT * FROM members WHERE id=?", (mid,)))
+
+
+def reset_member(member: dict) -> dict:
+    mid = member["id"]
+    db.execute("DELETE FROM word_progress WHERE member_id=?", (mid,))
+    db.execute("DELETE FROM custom_words WHERE member_id=?", (mid,))
+    db.execute("DELETE FROM daily WHERE member_id=?", (mid,))
+    db.execute(
+        "UPDATE quiz_stats SET taken=0, correct=0, answered=0, recent_json='[]', wrong_book_json='{}' WHERE member_id=?",
+        (mid,),
+    )
+    db.execute(
+        """UPDATE members
+           SET points_total=0, streak=0, last_checkin=NULL,
+               streak_bonuses='{"3":false,"7":false,"14":false}',
+               punishment_pending=0, missed_yesterday=0, miss_processed_on=NULL
+           WHERE id=?""",
+        (mid,),
+        commit=True,
+    )
+    return room_state(db.fetchone("SELECT * FROM members WHERE id=?", (mid,)))
+
+
+def start_quiz(member: dict, mode: str) -> list[dict]:
+    stats = ensure_quiz_stats(member["id"])
+    if mode == "wrong":
+        qs = wrong_book_questions(member, 10)
+        if not qs:
+            raise ValueError("错题本是空的")
+        return qs
+    recent = _loads(stats["recent_json"], [])
+    extras = custom_words(member["id"])
+    return wordbank.build_quiz(10, recent_ids=recent, extra_words=extras)

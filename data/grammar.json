@@ -1,0 +1,1332 @@
+[
+  {
+    "id": "g001",
+    "type": "grammar",
+    "prompt": "She _____ to work by subway every day.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "go",
+      "goes",
+      "going",
+      "gone"
+    ],
+    "answer": 1,
+    "explain": "主语 she 是第三人称单数，一般现在时动词要加 -es，所以用 goes。"
+  },
+  {
+    "id": "g002",
+    "type": "grammar",
+    "prompt": "I _____ this book for two weeks.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "read",
+      "am reading",
+      "have been reading",
+      "had read"
+    ],
+    "answer": 2,
+    "explain": "for two weeks 表示从过去持续到现在，用现在完成进行时 have been reading 最合适。"
+  },
+  {
+    "id": "g003",
+    "type": "grammar",
+    "prompt": "There _____ a lot of people in the café yesterday.",
+    "promptNote": "选择正确的 be 动词",
+    "choices": [
+      "was",
+      "were",
+      "are",
+      "is"
+    ],
+    "answer": 1,
+    "explain": "people 是复数，而且时间是 yesterday，所以用过去式 were。"
+  },
+  {
+    "id": "g004",
+    "type": "grammar",
+    "prompt": "If it rains tomorrow, we _____ at home.",
+    "promptNote": "选择正确的条件句形式",
+    "choices": [
+      "stay",
+      "will stay",
+      "would stay",
+      "stayed"
+    ],
+    "answer": 1,
+    "explain": "这是第一类条件句：If + 一般现在时，主句用 will，表示将来真实可能发生的情况。"
+  },
+  {
+    "id": "g005",
+    "type": "grammar",
+    "prompt": "I enjoy _____ in the park after dinner.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "walk",
+      "to walk",
+      "walking",
+      "walked"
+    ],
+    "answer": 2,
+    "explain": "enjoy 后面要接动词的 -ing 形式，所以是 enjoy walking。"
+  },
+  {
+    "id": "g006",
+    "type": "grammar",
+    "prompt": "This is _____ interesting book I have ever read.",
+    "promptNote": "选择正确的冠词与最高级",
+    "choices": [
+      "a most",
+      "the most",
+      "most",
+      "more"
+    ],
+    "answer": 1,
+    "explain": "形容词最高级前面通常要加 the。I have ever read 也提示这里要用最高级。"
+  },
+  {
+    "id": "g007",
+    "type": "grammar",
+    "prompt": "He is used _____ up early now.",
+    "promptNote": "选择正确的搭配",
+    "choices": [
+      "to get",
+      "to getting",
+      "get",
+      "getting"
+    ],
+    "answer": 1,
+    "explain": "be used to doing 表示“习惯于做某事”。used to do 才是“过去常常做”。"
+  },
+  {
+    "id": "g008",
+    "type": "grammar",
+    "prompt": "I have two _____ and a brother.",
+    "promptNote": "选择正确的复数形式",
+    "choices": [
+      "sister",
+      "sisters",
+      "sister's",
+      "sisters'"
+    ],
+    "answer": 1,
+    "explain": "two 后面要用复数名词，所以是 sisters。"
+  },
+  {
+    "id": "g009",
+    "type": "grammar",
+    "prompt": "She has lived here _____ 2019.",
+    "promptNote": "选择正确的介词",
+    "choices": [
+      "for",
+      "since",
+      "during",
+      "in"
+    ],
+    "answer": 1,
+    "explain": "since 后面接起点时间（2019）。for 后面接一段时间，如 for five years。"
+  },
+  {
+    "id": "g010",
+    "type": "grammar",
+    "prompt": "The news _____ surprising.",
+    "promptNote": "选择正确的 be 动词",
+    "choices": [
+      "is",
+      "are",
+      "were",
+      "have"
+    ],
+    "answer": 0,
+    "explain": "news 虽然以 s 结尾，但是不可数名词，作主语时动词用单数 is。"
+  },
+  {
+    "id": "g011",
+    "type": "grammar",
+    "prompt": "Would you mind _____ the window?",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "open",
+      "to open",
+      "opening",
+      "opened"
+    ],
+    "answer": 2,
+    "explain": "Would you mind doing something? 是固定用法，后面接 -ing 形式。"
+  },
+  {
+    "id": "g012",
+    "type": "grammar",
+    "prompt": "I wish I _____ more time this week.",
+    "promptNote": "选择正确的虚拟语气",
+    "choices": [
+      "have",
+      "had",
+      "will have",
+      "am having"
+    ],
+    "answer": 1,
+    "explain": "I wish 表示与现在事实相反的愿望，后面常用过去式，所以用 had。"
+  },
+  {
+    "id": "g013",
+    "type": "grammar",
+    "prompt": "Neither of the answers _____ correct.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "are",
+      "is",
+      "were",
+      "have been"
+    ],
+    "answer": 1,
+    "explain": "neither of 表示“两者中没有一个”，后面的动词通常用单数 is。"
+  },
+  {
+    "id": "g014",
+    "type": "grammar",
+    "prompt": "You'd better _____ now, or you'll be late.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "leaving",
+      "to leave",
+      "leave",
+      "left"
+    ],
+    "answer": 2,
+    "explain": "had better do something 表示“最好做某事”，后面接动词原形。"
+  },
+  {
+    "id": "g015",
+    "type": "grammar",
+    "prompt": "The meeting has been put _____ until Friday.",
+    "promptNote": "选择正确的短语动词",
+    "choices": [
+      "off",
+      "on",
+      "up",
+      "in"
+    ],
+    "answer": 0,
+    "explain": "put off 表示“推迟”。put on 是“穿上”或“上演”。"
+  },
+  {
+    "id": "g016",
+    "type": "grammar",
+    "prompt": "I don't have _____ money with me.",
+    "promptNote": "选择正确的限定词",
+    "choices": [
+      "some",
+      "many",
+      "much",
+      "a few"
+    ],
+    "answer": 2,
+    "explain": "money 是不可数名词，否定句里用 much。many 和 a few 用于可数名词。"
+  },
+  {
+    "id": "g017",
+    "type": "grammar",
+    "prompt": "She asked me where _____.",
+    "promptNote": "选择正确的语序",
+    "choices": [
+      "was the station",
+      "the station was",
+      "is the station",
+      "the station is"
+    ],
+    "answer": 1,
+    "explain": "间接疑问句要用陈述语序。主句是过去时 asked，从句也用过去时 the station was。"
+  },
+  {
+    "id": "g018",
+    "type": "grammar",
+    "prompt": "This café is _____ than the one near my office.",
+    "promptNote": "选择正确的比较级",
+    "choices": [
+      "quiet",
+      "quieter",
+      "quietest",
+      "more quieter"
+    ],
+    "answer": 1,
+    "explain": "quiet 的比较级是 quieter，前面不需要再加 more。"
+  },
+  {
+    "id": "g019",
+    "type": "grammar",
+    "prompt": "By the time we arrived, the movie _____.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "started",
+      "has started",
+      "had started",
+      "was start"
+    ],
+    "answer": 2,
+    "explain": "“我们到达”之前电影已经开始，这是过去的过去，要用过去完成时 had started。"
+  },
+  {
+    "id": "g020",
+    "type": "grammar",
+    "prompt": "I'm not used to _____ so much coffee.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "drink",
+      "drank",
+      "drinking",
+      "have drunk"
+    ],
+    "answer": 2,
+    "explain": "be used to 后面接名词或 -ing 形式，表示“习惯于”，所以用 drinking。"
+  },
+  {
+    "id": "g021",
+    "type": "grammar",
+    "prompt": "Let's keep the noise down, _____?",
+    "promptNote": "选择正确的反意疑问",
+    "choices": [
+      "will you",
+      "shall we",
+      "don't we",
+      "can we"
+    ],
+    "answer": 1,
+    "explain": "Let's... 开头的祈使句，反意疑问通常用 shall we。"
+  },
+  {
+    "id": "g022",
+    "type": "grammar",
+    "prompt": "He suggested that we _____ early tomorrow.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "leave",
+      "left",
+      "leaving",
+      "to leave"
+    ],
+    "answer": 0,
+    "explain": "suggest that somebody (should) do 里，should 可以省略，动词用原形 leave。"
+  },
+  {
+    "id": "g023",
+    "type": "grammar",
+    "prompt": "I haven't seen her _____ last Monday.",
+    "promptNote": "选择正确的介词",
+    "choices": [
+      "for",
+      "since",
+      "from",
+      "in"
+    ],
+    "answer": 1,
+    "explain": "现在完成时里，since 后接过去的时间点，如 last Monday；for 后接一段时间。"
+  },
+  {
+    "id": "g024",
+    "type": "grammar",
+    "prompt": "There isn't _____ milk left in the fridge.",
+    "promptNote": "选择正确的限定词",
+    "choices": [
+      "some",
+      "any",
+      "many",
+      "few"
+    ],
+    "answer": 1,
+    "explain": "否定句中通常用 any。milk 是不可数名词，不能用 many 或 few。"
+  },
+  {
+    "id": "g025",
+    "type": "grammar",
+    "prompt": "She speaks English _____ than she did last year.",
+    "promptNote": "选择正确的比较形式",
+    "choices": [
+      "fluent",
+      "fluently",
+      "more fluently",
+      "most fluently"
+    ],
+    "answer": 2,
+    "explain": "修饰动词 speaks 要用副词。比较级是 more fluently。"
+  },
+  {
+    "id": "g026",
+    "type": "grammar",
+    "prompt": "The train _____ when we got to the station.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "already left",
+      "has already left",
+      "had already left",
+      "is already leaving"
+    ],
+    "answer": 2,
+    "explain": "我们到达车站之前火车已经离开，要用过去完成时 had already left。"
+  },
+  {
+    "id": "g027",
+    "type": "grammar",
+    "prompt": "It's important _____ enough sleep every night.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "get",
+      "getting",
+      "to get",
+      "got"
+    ],
+    "answer": 2,
+    "explain": "It is important to do something 是常用结构，后面接不定式 to get。"
+  },
+  {
+    "id": "g028",
+    "type": "grammar",
+    "prompt": "I would rather _____ at home tonight.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "to stay",
+      "staying",
+      "stay",
+      "stayed"
+    ],
+    "answer": 2,
+    "explain": "would rather do 表示“宁可做某事”，后面接动词原形。"
+  },
+  {
+    "id": "g029",
+    "type": "grammar",
+    "prompt": "Not only _____ late, but he also forgot the report.",
+    "promptNote": "选择正确的倒装形式",
+    "choices": [
+      "he was",
+      "was he",
+      "he is",
+      "is he"
+    ],
+    "answer": 1,
+    "explain": "Not only 放在句首时，句子要部分倒装，而且后半句是过去时，所以用 was he。"
+  },
+  {
+    "id": "g030",
+    "type": "grammar",
+    "prompt": "The number of students in this class _____ 30.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "are",
+      "is",
+      "have",
+      "were"
+    ],
+    "answer": 1,
+    "explain": "the number of 表示“……的数量”，后面动词用单数 is。a number of 才表示“许多”，接复数动词。"
+  },
+  {
+    "id": "g031",
+    "type": "grammar",
+    "prompt": "I saw him _____ the street just now.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "crossed",
+      "to cross",
+      "crossing",
+      "crosses"
+    ],
+    "answer": 2,
+    "explain": "see somebody doing 表示看到某人正在做某事。just now 也提示动作当时正在发生。"
+  },
+  {
+    "id": "g032",
+    "type": "grammar",
+    "prompt": "The book _____ on the table is mine.",
+    "promptNote": "选择正确的定语形式",
+    "choices": [
+      "lying",
+      "laying",
+      "lies",
+      "lain"
+    ],
+    "answer": 0,
+    "explain": "这里需要现在分词作后置定语，lying 表示“躺、放在”。laying 是“放置”，对象通常是主动放下的东西。"
+  },
+  {
+    "id": "g033",
+    "type": "grammar",
+    "prompt": "This machine is used _____ coffee.",
+    "promptNote": "选择正确的搭配",
+    "choices": [
+      "to make",
+      "to making",
+      "make",
+      "made"
+    ],
+    "answer": 0,
+    "explain": "be used to do 表示“被用来做某事”。注意它和 be used to doing（习惯于）不同。"
+  },
+  {
+    "id": "g034",
+    "type": "grammar",
+    "prompt": "The classroom needs _____.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "to clean",
+      "clean",
+      "cleaning",
+      "cleaned"
+    ],
+    "answer": 2,
+    "explain": "need doing 表示“需要被……”，主动形式表示被动含义，等于 need to be cleaned。"
+  },
+  {
+    "id": "g035",
+    "type": "grammar",
+    "prompt": "It is the first time that I _____ to Beijing.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "was",
+      "have been",
+      "had been",
+      "will be"
+    ],
+    "answer": 1,
+    "explain": "It is the first time that... 后面通常用现在完成时 have been。"
+  },
+  {
+    "id": "g036",
+    "type": "grammar",
+    "prompt": "Hardly _____ the station when the train left.",
+    "promptNote": "选择正确的倒装与时态",
+    "choices": [
+      "we reached",
+      "we had reached",
+      "had we reached",
+      "did we reached"
+    ],
+    "answer": 2,
+    "explain": "Hardly...when... 表示“刚……就……”，hardly 在句首时要倒装，并且用过去完成时：had we reached。"
+  },
+  {
+    "id": "g037",
+    "type": "grammar",
+    "prompt": "The teacher, as well as the students, _____ excited.",
+    "promptNote": "选择正确的主谓一致",
+    "choices": [
+      "are",
+      "is",
+      "were",
+      "have been"
+    ],
+    "answer": 1,
+    "explain": "as well as 连接两个主语时，谓语动词跟前面的名词一致，这里跟 the teacher，用单数 is。"
+  },
+  {
+    "id": "g038",
+    "type": "grammar",
+    "prompt": "I prefer _____ at home to going out in the rain.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "stay",
+      "to stay",
+      "staying",
+      "stayed"
+    ],
+    "answer": 2,
+    "explain": "prefer doing A to doing B 是常用搭配，to 是介词，两边都用 -ing。"
+  },
+  {
+    "id": "g039",
+    "type": "grammar",
+    "prompt": "He is the man _____ I met at the conference.",
+    "promptNote": "选择正确的关系词",
+    "choices": [
+      "which",
+      "whose",
+      "whom",
+      "where"
+    ],
+    "answer": 2,
+    "explain": "先行词是 the man，在从句中作 met 的宾语，可以用 whom（或省略，或用 who/that）。选项中正确的是 whom。"
+  },
+  {
+    "id": "g040",
+    "type": "grammar",
+    "prompt": "This is the house _____ I lived when I was a child.",
+    "promptNote": "选择正确的关系词",
+    "choices": [
+      "which",
+      "that",
+      "where",
+      "what"
+    ],
+    "answer": 2,
+    "explain": "先行词 house 在从句中作地点状语，关系词用 where，等于 in which。"
+  },
+  {
+    "id": "g041",
+    "type": "grammar",
+    "prompt": "_____ is known to all, the earth moves around the sun.",
+    "promptNote": "选择正确的连接成分",
+    "choices": [
+      "It",
+      "As",
+      "That",
+      "What"
+    ],
+    "answer": 1,
+    "explain": "As is known to all 是非限制性定语从句，as 指后面整句话。It is known that 才用 It，但后面要有 that。"
+  },
+  {
+    "id": "g042",
+    "type": "grammar",
+    "prompt": "The more you practice, _____ you will become.",
+    "promptNote": "选择正确的比较结构",
+    "choices": [
+      "the fluent",
+      "the more fluent",
+      "more fluent",
+      "fluent"
+    ],
+    "answer": 1,
+    "explain": "the more..., the more... 表示“越……就越……”，后面也要用比较级 the more fluent。"
+  },
+  {
+    "id": "g043",
+    "type": "grammar",
+    "prompt": "He didn't go to bed _____ he finished his homework.",
+    "promptNote": "选择正确的连词",
+    "choices": [
+      "if",
+      "because",
+      "until",
+      "since"
+    ],
+    "answer": 2,
+    "explain": "not...until... 表示“直到……才……”。"
+  },
+  {
+    "id": "g044",
+    "type": "grammar",
+    "prompt": "Many a student _____ the same mistake.",
+    "promptNote": "选择正确的主谓一致",
+    "choices": [
+      "make",
+      "makes",
+      "are making",
+      "have made"
+    ],
+    "answer": 1,
+    "explain": "many a + 单数名词 表示“许多”，但谓语动词用单数 makes。"
+  },
+  {
+    "id": "g045",
+    "type": "grammar",
+    "prompt": "The river is dangerous _____.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "to swim",
+      "to swim in",
+      "swimming",
+      "to be swum"
+    ],
+    "answer": 1,
+    "explain": "在“形容词 + 不定式”里，如果不定式动词是不及物的，要保留介词。swim 后面需要 in，所以是 to swim in。"
+  },
+  {
+    "id": "g046",
+    "type": "grammar",
+    "prompt": "It was in this room _____ they had the meeting.",
+    "promptNote": "选择正确的强调句形式",
+    "choices": [
+      "which",
+      "that",
+      "where",
+      "when"
+    ],
+    "answer": 1,
+    "explain": "这是强调句 It was...that...。被强调的是地点状语 in this room，后面仍用 that，不用 where。"
+  },
+  {
+    "id": "g047",
+    "type": "grammar",
+    "prompt": "I have no idea _____ he will come tomorrow.",
+    "promptNote": "选择正确的连接词",
+    "choices": [
+      "that",
+      "what",
+      "whether",
+      "which"
+    ],
+    "answer": 2,
+    "explain": "“他明天是否会来”是一个表示不确定的从句，用 whether（或 if）。that 不能表示“是否”。"
+  },
+  {
+    "id": "g048",
+    "type": "grammar",
+    "prompt": "The problem is _____ we can finish the work on time.",
+    "promptNote": "选择正确的表语从句连接词",
+    "choices": [
+      "that",
+      "what",
+      "whether",
+      "which"
+    ],
+    "answer": 2,
+    "explain": "表语从句表示“我们能否按时完成”，带有“是否”含义，用 whether。"
+  },
+  {
+    "id": "g049",
+    "type": "grammar",
+    "prompt": "He talks as if he _____ everything.",
+    "promptNote": "选择正确的虚拟语气",
+    "choices": [
+      "knows",
+      "knew",
+      "has known",
+      "know"
+    ],
+    "answer": 1,
+    "explain": "as if 表示与现在事实相反的假设时，从句常用过去式 knew。"
+  },
+  {
+    "id": "g050",
+    "type": "grammar",
+    "prompt": "If I _____ you, I would accept the offer.",
+    "promptNote": "选择正确的虚拟语气",
+    "choices": [
+      "am",
+      "was",
+      "were",
+      "had been"
+    ],
+    "answer": 2,
+    "explain": "与现在事实相反的虚拟语气中，be 动词常用 were：If I were you。"
+  },
+  {
+    "id": "g051",
+    "type": "grammar",
+    "prompt": "The letter _____ last week is very important.",
+    "promptNote": "选择正确的非谓语形式",
+    "choices": [
+      "receiving",
+      "received",
+      "to receive",
+      "receives"
+    ],
+    "answer": 1,
+    "explain": "letter 和 receive 是被动关系，而且动作已经发生，用过去分词 received 作后置定语。"
+  },
+  {
+    "id": "g052",
+    "type": "grammar",
+    "prompt": "_____ from the hill, the village looks very small.",
+    "promptNote": "选择正确的非谓语形式",
+    "choices": [
+      "Seeing",
+      "Seen",
+      "To see",
+      "See"
+    ],
+    "answer": 1,
+    "explain": "逻辑主语是 the village，和 see 是被动关系，用过去分词 Seen。"
+  },
+  {
+    "id": "g053",
+    "type": "grammar",
+    "prompt": "He spent two hours _____ the report.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "write",
+      "to write",
+      "writing",
+      "wrote"
+    ],
+    "answer": 2,
+    "explain": "spend time doing something 是固定搭配，所以用 writing。"
+  },
+  {
+    "id": "g054",
+    "type": "grammar",
+    "prompt": "The box is too heavy for me _____.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "moving",
+      "move",
+      "to move",
+      "moved"
+    ],
+    "answer": 2,
+    "explain": "too...to... 表示“太……而不能……”，后面接不定式 to move。"
+  },
+  {
+    "id": "g055",
+    "type": "grammar",
+    "prompt": "She made her son _____ the piano for an hour.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "to practice",
+      "practice",
+      "practicing",
+      "practiced"
+    ],
+    "answer": 1,
+    "explain": "make somebody do something 是使役动词结构，后面接动词原形 practice。"
+  },
+  {
+    "id": "g056",
+    "type": "grammar",
+    "prompt": "I remember _____ the door, but it is open now.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "to lock",
+      "locking",
+      "lock",
+      "locked"
+    ],
+    "answer": 1,
+    "explain": "remember doing 表示“记得已经做过某事”。remember to do 是“记得要去做”。这里说门却开着，说明记得锁过。"
+  },
+  {
+    "id": "g057",
+    "type": "grammar",
+    "prompt": "Don't forget _____ your umbrella; it may rain later.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "taking",
+      "take",
+      "to take",
+      "taken"
+    ],
+    "answer": 2,
+    "explain": "forget to do 表示“忘记要做某事”。这里是出门前提醒别忘了带伞。"
+  },
+  {
+    "id": "g058",
+    "type": "grammar",
+    "prompt": "The old man has two sons, both of _____ are doctors.",
+    "promptNote": "选择正确的关系词",
+    "choices": [
+      "who",
+      "whom",
+      "them",
+      "which"
+    ],
+    "answer": 1,
+    "explain": "这是非限制性定语从句，介词 of 后面要用宾格 whom，不能用 who，也不能用 them（否则就成了两个句子）。"
+  },
+  {
+    "id": "g059",
+    "type": "grammar",
+    "prompt": "_____ the morning of June 1st, we visited the museum.",
+    "promptNote": "选择正确的介词",
+    "choices": [
+      "In",
+      "At",
+      "On",
+      "By"
+    ],
+    "answer": 2,
+    "explain": "具体到某一天的上午、下午、晚上，介词用 on，如 on the morning of June 1st。"
+  },
+  {
+    "id": "g060",
+    "type": "grammar",
+    "prompt": "He has been working in this company _____ five years.",
+    "promptNote": "选择正确的介词",
+    "choices": [
+      "since",
+      "for",
+      "in",
+      "during"
+    ],
+    "answer": 1,
+    "explain": "five years 是一段时间，现在完成进行时里用 for。since 后接时间点。"
+  },
+  {
+    "id": "g061",
+    "type": "grammar",
+    "prompt": "A number of trees _____ planted along the river last year.",
+    "promptNote": "选择正确的主谓一致",
+    "choices": [
+      "was",
+      "were",
+      "is",
+      "has been"
+    ],
+    "answer": 1,
+    "explain": "a number of 表示“许多”，后面接复数名词，谓语用复数 were。"
+  },
+  {
+    "id": "g062",
+    "type": "grammar",
+    "prompt": "It _____ heavily when I left the office.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "rains",
+      "has rained",
+      "was raining",
+      "had rained"
+    ],
+    "answer": 2,
+    "explain": "“我离开办公室时正在下大雨”，用过去进行时 was raining。"
+  },
+  {
+    "id": "g063",
+    "type": "grammar",
+    "prompt": "This is one of the best films that _____ this year.",
+    "promptNote": "选择正确的时态与一致",
+    "choices": [
+      "has been shown",
+      "have been shown",
+      "was shown",
+      "is shown"
+    ],
+    "answer": 1,
+    "explain": "定语从句修饰 the best films（复数），所以用 have been shown。"
+  },
+  {
+    "id": "g064",
+    "type": "grammar",
+    "prompt": "He didn't tell me _____ I should wait for him.",
+    "promptNote": "选择正确的连接词",
+    "choices": [
+      "how long",
+      "how often",
+      "how soon",
+      "how far"
+    ],
+    "answer": 0,
+    "explain": "how long 表示“等多久”。how soon 是“再过多久才开始”，how often 是频率。"
+  },
+  {
+    "id": "g065",
+    "type": "grammar",
+    "prompt": "The boy is old enough _____ to school by himself.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "going",
+      "go",
+      "to go",
+      "gone"
+    ],
+    "answer": 2,
+    "explain": "adj. + enough + to do 表示“足够……可以做某事”，用 to go。"
+  },
+  {
+    "id": "g066",
+    "type": "grammar",
+    "prompt": "No sooner _____ the phone than it stopped ringing.",
+    "promptNote": "选择正确的倒装形式",
+    "choices": [
+      "he picked up",
+      "had he picked up",
+      "he had picked up",
+      "did he pick up"
+    ],
+    "answer": 1,
+    "explain": "no sooner...than... 表示“刚……就……”，no sooner 在句首时要倒装，并用过去完成时：had he picked up。"
+  },
+  {
+    "id": "g067",
+    "type": "grammar",
+    "prompt": "I found it difficult _____ the problem without help.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "solve",
+      "solving",
+      "to solve",
+      "solved"
+    ],
+    "answer": 2,
+    "explain": "find it + adj. + to do 是常用结构，it 是形式宾语，真正的宾语是 to solve the problem。"
+  },
+  {
+    "id": "g068",
+    "type": "grammar",
+    "prompt": "The chair is comfortable to _____.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "sit",
+      "sit on",
+      "sitting",
+      "be sat"
+    ],
+    "answer": 1,
+    "explain": "sit 是不及物动词，后面要保留介词 on，表示“坐在这把椅子上”。"
+  },
+  {
+    "id": "g069",
+    "type": "grammar",
+    "prompt": "Only then _____ that I had made a mistake.",
+    "promptNote": "选择正确的倒装形式",
+    "choices": [
+      "I realized",
+      "did I realize",
+      "I did realize",
+      "had I realize"
+    ],
+    "answer": 1,
+    "explain": "only + 状语放在句首时，主句要部分倒装：did I realize。"
+  },
+  {
+    "id": "g070",
+    "type": "grammar",
+    "prompt": "He is looking forward to _____ from his friend.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "hear",
+      "hearing",
+      "heard",
+      "hears"
+    ],
+    "answer": 1,
+    "explain": "look forward to 里的 to 是介词，后面接 -ing 形式 hearing。"
+  },
+  {
+    "id": "g071",
+    "type": "grammar",
+    "prompt": "The weather turned out to be very good, _____ was more than we expected.",
+    "promptNote": "选择正确的关系词",
+    "choices": [
+      "what",
+      "which",
+      "that",
+      "it"
+    ],
+    "answer": 1,
+    "explain": "非限制性定语从句指前面整件事，关系词用 which，不能用 that。"
+  },
+  {
+    "id": "g072",
+    "type": "grammar",
+    "prompt": "I don't think he will come, _____?",
+    "promptNote": "选择正确的反意疑问",
+    "choices": [
+      "do I",
+      "will he",
+      "won't he",
+      "does he"
+    ],
+    "answer": 1,
+    "explain": "I don't think + 从句的反意疑问，要针对从句，并且否定已在主句，所以用 will he。"
+  },
+  {
+    "id": "g073",
+    "type": "grammar",
+    "prompt": "_____ he said at the meeting surprised everyone.",
+    "promptNote": "选择正确的主语从句连接词",
+    "choices": [
+      "That",
+      "Which",
+      "What",
+      "Whether"
+    ],
+    "answer": 2,
+    "explain": "what he said 表示“他所所说的话”，what 在从句中作 said 的宾语。"
+  },
+  {
+    "id": "g074",
+    "type": "grammar",
+    "prompt": "She will call you as soon as she _____ there.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "gets",
+      "will get",
+      "got",
+      "is getting"
+    ],
+    "answer": 0,
+    "explain": "时间状语从句中，用一般现在时表示将来，所以用 gets，不用 will get。"
+  },
+  {
+    "id": "g075",
+    "type": "grammar",
+    "prompt": "The work _____ by the end of next month.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "will finish",
+      "will have been finished",
+      "has been finished",
+      "is finished"
+    ],
+    "answer": 1,
+    "explain": "by the end of next month 表示到将来某个时间为止，用将来完成时，且 work 是被完成，所以是 will have been finished。"
+  },
+  {
+    "id": "g076",
+    "type": "grammar",
+    "prompt": "It is high time that we _____ action.",
+    "promptNote": "选择正确的虚拟语气",
+    "choices": [
+      "take",
+      "took",
+      "will take",
+      "have taken"
+    ],
+    "answer": 1,
+    "explain": "It is high time that... 表示“该做某事了”，从句常用过去式 took。"
+  },
+  {
+    "id": "g077",
+    "type": "grammar",
+    "prompt": "Without your help, I _____ the work yesterday.",
+    "promptNote": "选择正确的虚拟语气",
+    "choices": [
+      "can't finish",
+      "couldn't finish",
+      "couldn't have finished",
+      "mustn't have finished"
+    ],
+    "answer": 2,
+    "explain": "without your help 表示与过去事实相反的假设，主句用 couldn't have finished。"
+  },
+  {
+    "id": "g078",
+    "type": "grammar",
+    "prompt": "The reason why he was late is _____ he missed the bus.",
+    "promptNote": "选择正确的连接词",
+    "choices": [
+      "because",
+      "why",
+      "that",
+      "which"
+    ],
+    "answer": 2,
+    "explain": "The reason is that... 是正式用法。避免 the reason is because 这种重复。"
+  },
+  {
+    "id": "g079",
+    "type": "grammar",
+    "prompt": "I have never heard _____ story before.",
+    "promptNote": "选择正确的限定词",
+    "choices": [
+      "such a interesting",
+      "such an interesting",
+      "so an interesting",
+      "a such interesting"
+    ],
+    "answer": 1,
+    "explain": "such + a/an + adj. + 名词。interesting 以元音音素开头，所以用 such an interesting story。"
+  },
+  {
+    "id": "g080",
+    "type": "grammar",
+    "prompt": "He ran _____ than I had expected.",
+    "promptNote": "选择正确的比较形式",
+    "choices": [
+      "more faster",
+      "fastly",
+      "faster",
+      "fastest"
+    ],
+    "answer": 2,
+    "explain": "fast 的比较级是 faster，不能再加 more。没有 fastly 这种常用形式。"
+  },
+  {
+    "id": "g081",
+    "type": "grammar",
+    "prompt": "The students were made _____ the text again.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "repeat",
+      "to repeat",
+      "repeating",
+      "repeated"
+    ],
+    "answer": 1,
+    "explain": "主动语态里 make somebody do，但变成被动时要补回 to：be made to do。"
+  },
+  {
+    "id": "g082",
+    "type": "grammar",
+    "prompt": "There used to be a temple here, _____?",
+    "promptNote": "选择正确的反意疑问",
+    "choices": [
+      "usedn't it",
+      "didn't there",
+      "wasn't there",
+      "used there"
+    ],
+    "answer": 1,
+    "explain": "there used to be 的反意疑问常用 didn't there（也可以用 usedn't there，但最常见的是 didn't there）。"
+  },
+  {
+    "id": "g083",
+    "type": "grammar",
+    "prompt": "_____ is no doubt that he will succeed.",
+    "promptNote": "选择正确的句式",
+    "choices": [
+      "It",
+      "That",
+      "There",
+      "This"
+    ],
+    "answer": 2,
+    "explain": "There is no doubt that... 是固定句式，表示“毫无疑问……”。"
+  },
+  {
+    "id": "g084",
+    "type": "grammar",
+    "prompt": "I would appreciate _____ back this afternoon.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "you to call",
+      "you call",
+      "your calling",
+      "that you calling"
+    ],
+    "answer": 2,
+    "explain": "appreciate 后面接名词或 -ing 形式，常用 appreciate your calling。"
+  },
+  {
+    "id": "g085",
+    "type": "grammar",
+    "prompt": "The professor came into the room, _____ by a group of students.",
+    "promptNote": "选择正确的非谓语形式",
+    "choices": [
+      "following",
+      "followed",
+      "to follow",
+      "follows"
+    ],
+    "answer": 1,
+    "explain": "教授是“被学生们跟着”，用过去分词 followed 表示被动。"
+  },
+  {
+    "id": "g086",
+    "type": "grammar",
+    "prompt": "You can hardly imagine how I missed you, _____?",
+    "promptNote": "选择正确的反意疑问",
+    "choices": [
+      "can you",
+      "can't you",
+      "did I",
+      "didn't I"
+    ],
+    "answer": 0,
+    "explain": "陈述部分有 hardly，已经表示否定，反意疑问用肯定 can you。"
+  },
+  {
+    "id": "g087",
+    "type": "grammar",
+    "prompt": "_____ you work, the greater progress you will make.",
+    "promptNote": "选择正确的比较结构",
+    "choices": [
+      "Harder",
+      "The harder",
+      "The hard",
+      "Hard"
+    ],
+    "answer": 1,
+    "explain": "the + 比较级..., the + 比较级... 表示“越……就越……”，所以用 The harder。"
+  },
+  {
+    "id": "g088",
+    "type": "grammar",
+    "prompt": "All the books _____ had pictures in them were sent to the kids.",
+    "promptNote": "选择正确的关系词",
+    "choices": [
+      "which",
+      "that",
+      "what",
+      "whose"
+    ],
+    "answer": 1,
+    "explain": "先行词被 all 修饰时，关系代词通常用 that，不用 which。"
+  },
+  {
+    "id": "g089",
+    "type": "grammar",
+    "prompt": "I didn't go to the party, but I do wish I _____ there.",
+    "promptNote": "选择正确的虚拟语气",
+    "choices": [
+      "was",
+      "were",
+      "had been",
+      "would be"
+    ],
+    "answer": 2,
+    "explain": "wish 表示与过去事实相反的愿望，用过去完成时 had been。"
+  },
+  {
+    "id": "g090",
+    "type": "grammar",
+    "prompt": "The house _____ roof was damaged has now been repaired.",
+    "promptNote": "选择正确的关系词",
+    "choices": [
+      "which",
+      "that",
+      "whose",
+      "who"
+    ],
+    "answer": 2,
+    "explain": "whose 表示“……的”，在定语从句中修饰 roof，相当于 the roof of which。"
+  },
+  {
+    "id": "g091",
+    "type": "grammar",
+    "prompt": "We'll go to the park if it _____ rain tomorrow.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "won't",
+      "doesn't",
+      "wouldn't",
+      "isn't"
+    ],
+    "answer": 1,
+    "explain": "if 条件句用一般现在时表示将来，否定形式是 doesn't rain。"
+  },
+  {
+    "id": "g092",
+    "type": "grammar",
+    "prompt": "He has a lot of books, most of _____ are about history.",
+    "promptNote": "选择正确的关系词",
+    "choices": [
+      "them",
+      "which",
+      "that",
+      "what"
+    ],
+    "answer": 1,
+    "explain": "介词 of 后接 which 引导非限制性定语从句。如果用 them，需要把逗号改成分号或加 and。"
+  },
+  {
+    "id": "g093",
+    "type": "grammar",
+    "prompt": "It takes me twenty minutes _____ to the office.",
+    "promptNote": "选择正确的动词形式",
+    "choices": [
+      "getting",
+      "get",
+      "to get",
+      "got"
+    ],
+    "answer": 2,
+    "explain": "It takes somebody + 时间 + to do 是固定句型，用 to get。"
+  },
+  {
+    "id": "g094",
+    "type": "grammar",
+    "prompt": "The boy _____ in the accident was taken to hospital.",
+    "promptNote": "选择正确的非谓语形式",
+    "choices": [
+      "injuring",
+      "injured",
+      "to injure",
+      "injure"
+    ],
+    "answer": 1,
+    "explain": "the boy 和 injure 是被动关系，用过去分词 injured 作定语，表示“受伤的男孩”。"
+  },
+  {
+    "id": "g095",
+    "type": "grammar",
+    "prompt": "I don't know if he _____. If he _____, I will tell you.",
+    "promptNote": "选择正确的时态",
+    "choices": [
+      "comes; comes",
+      "will come; comes",
+      "comes; will come",
+      "will come; will come"
+    ],
+    "answer": 1,
+    "explain": "第一个 if 表示“是否”，宾语从句可用 will come；第二个 if 表示“如果”，条件句用一般现在时 comes。"
+  }
+]
