@@ -1,7 +1,7 @@
 {
-  "name": "进步 Progress",
-  "short_name": "进步",
-  "description": "两人互相监督的四级英语学习：记单词、做题、每日打卡",
+  "name": "请叫我学习",
+  "short_name": "请叫我学习",
+  "description": "两人互相监督的学习站：四级英语或韩语，记单词、做题、每日打卡",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

@@ -1,4 +1,4 @@
-/* 进步 · API 封装。登录凭证只保存在本机。 */
+/* 请叫我学习 · API 封装。登录凭证只保存在本机。 */
 (function (global) {
   const TOKEN_KEY = "jinbu.room.token";
 
@@ -56,11 +56,11 @@
     createRoom: (body) => api("/api/rooms", { method: "POST", body }),
     joinRoom: (body) => api("/api/rooms/join", { method: "POST", body }),
     saveSettings: (body) => api("/api/settings", { method: "PATCH", body }),
-    session: () => api("/api/session"),
+    session: (track) => api("/api/session" + (track ? "?track=" + encodeURIComponent(track) : "")),
     rateWord: (wordId, rating) => api("/api/vocab/rate", { method: "POST", body: { wordId, rating } }),
-    completeVocab: () => api("/api/vocab/complete", { method: "POST", body: {} }),
-    quiz: (mode) => api("/api/quiz?mode=" + encodeURIComponent(mode || "normal")),
-    submitQuiz: (mode, answers) => api("/api/quiz/submit", { method: "POST", body: { mode, answers } }),
+    completeVocab: (track) => api("/api/vocab/complete", { method: "POST", body: { track: track || null } }),
+    quiz: (mode, track) => api("/api/quiz?mode=" + encodeURIComponent(mode || "normal") + "&track=" + encodeURIComponent(track || "cet4")),
+    submitQuiz: (mode, answers, track) => api("/api/quiz/submit", { method: "POST", body: { mode, answers, track: track || "cet4" } }),
     checkin: () => api("/api/checkin", { method: "POST", body: {} }),
     words: (params) => {
       const q = new URLSearchParams(params || {}).toString();

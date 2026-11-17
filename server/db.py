@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import threading
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,7 +43,8 @@ CREATE TABLE IF NOT EXISTS members (
   missed_yesterday INTEGER NOT NULL DEFAULT 0,
   miss_processed_on TEXT,
   joined_date TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  study_plan TEXT NOT NULL DEFAULT 'cet4'
 );
 
 CREATE TABLE IF NOT EXISTS daily (
@@ -58,6 +61,14 @@ CREATE TABLE IF NOT EXISTS daily (
   checkin INTEGER NOT NULL DEFAULT 0,
   punishment INTEGER NOT NULL DEFAULT 0,
   points INTEGER NOT NULL DEFAULT 0,
+  ko_review_target INTEGER,
+  ko_new_target INTEGER,
+  ko_quiz_target INTEGER NOT NULL DEFAULT 0,
+  ko_reviewed_due_json TEXT NOT NULL DEFAULT '[]',
+  ko_new_introduced_json TEXT NOT NULL DEFAULT '[]',
+  ko_reviewed_all_json TEXT NOT NULL DEFAULT '[]',
+  ko_vocab_done INTEGER NOT NULL DEFAULT 0,
+  ko_quizzes_done INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (member_id, date)
 );
 
@@ -72,6 +83,7 @@ CREATE TABLE IF NOT EXISTS word_progress (
   last_rating TEXT,
   last_reviewed INTEGER,
   introduced_on TEXT,
+  round_correct INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (member_id, word_id)
 );
 
@@ -94,7 +106,96 @@ CREATE TABLE IF NOT EXISTS quiz_stats (
   recent_json TEXT NOT NULL DEFAULT '[]',
   wrong_book_json TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS app_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 """
+
+# One-time assignment: the live room's partner keeps CET-4 and also gets Korean.
+_KOO_PLAN_KEY = "koo_korean_plan_v1"
+_CURVE_KEY = "review_curve_v1"
+_NAME_PUNCT = re.compile(r"[\s_\-–—·•.。,，、'\"`~～!！?？:：;；()（）\[\]【】／/\\|]+")
+
+
+def normalize_display_name(name: str) -> str:
+    """Ignore case, width, and light punctuation so koo陸_ still matches."""
+    text = unicodedata.normalize("NFKC", name or "").strip().lower()
+    text = text.replace("陸", "陆")
+    return _NAME_PUNCT.sub("", text)
+
+
+def is_koo_partner_name(name: str) -> bool:
+    folded = normalize_display_name(name)
+    return folded in {"koo陆", "koolu"}
+
+
+def _table_cols(con: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+
+
+def _add_col(con: sqlite3.Connection, table: str, name: str, decl: str) -> None:
+    if name not in _table_cols(con, table):
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+def _migrate(con: sqlite3.Connection) -> None:
+    """Add new columns without touching existing progress, then assign Korean once."""
+    _add_col(con, "members", "study_plan", "TEXT NOT NULL DEFAULT 'cet4'")
+    _add_col(con, "daily", "ko_review_target", "INTEGER")
+    _add_col(con, "daily", "ko_new_target", "INTEGER")
+    _add_col(con, "daily", "ko_quiz_target", "INTEGER NOT NULL DEFAULT 0")
+    _add_col(con, "daily", "ko_reviewed_due_json", "TEXT NOT NULL DEFAULT '[]'")
+    _add_col(con, "daily", "ko_new_introduced_json", "TEXT NOT NULL DEFAULT '[]'")
+    _add_col(con, "daily", "ko_reviewed_all_json", "TEXT NOT NULL DEFAULT '[]'")
+    _add_col(con, "daily", "ko_vocab_done", "INTEGER NOT NULL DEFAULT 0")
+    _add_col(con, "daily", "ko_quizzes_done", "INTEGER NOT NULL DEFAULT 0")
+    _add_col(con, "word_progress", "round_correct", "INTEGER NOT NULL DEFAULT 0")
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    done = con.execute("SELECT value FROM app_meta WHERE key=?", (_KOO_PLAN_KEY,)).fetchone()
+    if done is None:
+        # Existing members are on CET-4. Add Korean beside that plan for koo陸_
+        # only. Run once so a later settings change is not overwritten on restart.
+        for row in con.execute("SELECT id, name, study_plan FROM members"):
+            if not is_koo_partner_name(row["name"] if isinstance(row, sqlite3.Row) else row[1]):
+                continue
+            current = (row["study_plan"] if isinstance(row, sqlite3.Row) else row[2]) or "cet4"
+            if current == "korean":
+                updated = "korean"
+            elif current == "both":
+                updated = "both"
+            else:
+                updated = "both"
+            member_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
+            con.execute("UPDATE members SET study_plan=? WHERE id=?", (updated, member_id))
+        con.execute(
+            "INSERT INTO app_meta (key, value) VALUES (?, ?)",
+            (_KOO_PLAN_KEY, "1"),
+        )
+    # Fold older intervals onto 1, 2, 4, 7, 15, 30 without moving due dates,
+    # points, reps, or check-ins. Values already on the curve stay put.
+    curved = con.execute("SELECT value FROM app_meta WHERE key=?", (_CURVE_KEY,)).fetchone()
+    if curved is None:
+        con.execute(
+            """UPDATE word_progress
+               SET interval_days = CASE
+                 WHEN interval_days IS NULL OR interval_days <= 0 THEN 0
+                 WHEN interval_days < 2 THEN 1
+                 WHEN interval_days < 4 THEN 2
+                 WHEN interval_days < 7 THEN 4
+                 WHEN interval_days < 15 THEN 7
+                 WHEN interval_days < 30 THEN 15
+                 ELSE 30
+               END"""
+        )
+        con.execute(
+            "INSERT INTO app_meta (key, value) VALUES (?, ?)",
+            (_CURVE_KEY, "1,2,4,7,15,30"),
+        )
+    con.commit()
 
 
 def connect() -> sqlite3.Connection:
@@ -105,6 +206,7 @@ def connect() -> sqlite3.Connection:
         _conn.row_factory = sqlite3.Row
         _conn.executescript(SCHEMA)
         _conn.commit()
+        _migrate(_conn)
     return _conn
 
 

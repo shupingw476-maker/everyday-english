@@ -1,12 +1,15 @@
-"""FastAPI app: API + static frontend for 进步."""
+"""FastAPI app: API + static frontend for 请叫我学习."""
 from __future__ import annotations
 
 import json
+import urllib.parse
+import urllib.request
+from collections import OrderedDict
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -15,18 +18,24 @@ from . import db, logic, words as wordbank
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "static"
 
-app = FastAPI(title="进步 Progress", docs_url=None, redoc_url=None)
+app = FastAPI(title="请叫我学习", docs_url=None, redoc_url=None)
+
+# Short same-origin cache so a second tap does not wait on the speech host again.
+_TTS_CACHE: OrderedDict[tuple[str, str], bytes] = OrderedDict()
+_TTS_CACHE_MAX = 240
 
 
 class CreateRoomIn(BaseModel):
     name: str
     friendName: str | None = None
     punishmentText: str | None = None
+    studyPlan: str | None = None
 
 
 class JoinRoomIn(BaseModel):
     code: str
     name: str
+    studyPlan: str | None = None
 
 
 class RateIn(BaseModel):
@@ -36,7 +45,12 @@ class RateIn(BaseModel):
 
 class QuizSubmitIn(BaseModel):
     mode: str = "normal"
+    track: str | None = None
     answers: list[dict] = Field(default_factory=list)
+
+
+class VocabCompleteIn(BaseModel):
+    track: str | None = None
 
 
 class SettingsIn(BaseModel):
@@ -44,6 +58,7 @@ class SettingsIn(BaseModel):
     dailyNew: int | None = None
     reviewCap: int | None = None
     punishmentText: str | None = None
+    studyPlan: str | None = None
 
 
 class CustomWordIn(BaseModel):
@@ -103,7 +118,7 @@ def guarded(fn):
 def create_room(body: CreateRoomIn):
     with db.lock():
         try:
-            return logic.create_room(body.name, body.friendName, body.punishmentText)
+            return logic.create_room(body.name, body.friendName, body.punishmentText, body.studyPlan)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -112,7 +127,7 @@ def create_room(body: CreateRoomIn):
 def join_room(body: JoinRoomIn):
     with db.lock():
         try:
-            return logic.join_room(body.code, body.name)
+            return logic.join_room(body.code, body.name, body.studyPlan)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -135,11 +150,20 @@ def patch_settings(body: SettingsIn, authorization: str | None = Header(default=
 
 
 @app.get("/api/session")
-def get_session(authorization: str | None = Header(default=None), x_token: str | None = Header(default=None, alias="X-Token")):
+def get_session(
+    track: str | None = None,
+    authorization: str | None = Header(default=None),
+    x_token: str | None = Header(default=None, alias="X-Token"),
+):
     member = current_member(authorization, x_token)
     with db.lock():
-        items = logic.build_session(member)
-        return {"items": items, "plan": logic.plan_for(member) | {"remainingDue": None, "remainingNew": None, "daily": None}}
+        try:
+            items = logic.build_session(member, track)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        plan = logic.plan_for(member)
+        public = {k: v for k, v in plan.items() if k not in ("remainingDue", "remainingNew", "daily", "_tracks")}
+        return {"items": items, "track": track, "plan": public}
 
 
 @app.post("/api/vocab/rate")
@@ -153,19 +177,28 @@ def vocab_rate(body: RateIn, authorization: str | None = Header(default=None), x
 
 
 @app.post("/api/vocab/complete")
-def vocab_complete(authorization: str | None = Header(default=None), x_token: str | None = Header(default=None, alias="X-Token")):
+def vocab_complete(
+    body: VocabCompleteIn | None = None,
+    authorization: str | None = Header(default=None),
+    x_token: str | None = Header(default=None, alias="X-Token"),
+):
     member = current_member(authorization, x_token)
     with db.lock():
-        return logic.complete_vocab_session(member)
+        return logic.complete_vocab_session(member, (body.track if body else None))
 
 
 @app.get("/api/quiz")
-def get_quiz(mode: str = "normal", authorization: str | None = Header(default=None), x_token: str | None = Header(default=None, alias="X-Token")):
+def get_quiz(
+    mode: str = "normal",
+    track: str = "cet4",
+    authorization: str | None = Header(default=None),
+    x_token: str | None = Header(default=None, alias="X-Token"),
+):
     member = current_member(authorization, x_token)
     with db.lock():
         try:
-            questions = logic.start_quiz(member, mode)
-            return {"questions": questions, "mode": mode}
+            questions = logic.start_quiz(member, mode, track)
+            return {"questions": questions, "mode": mode, "track": track}
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -174,7 +207,7 @@ def get_quiz(mode: str = "normal", authorization: str | None = Header(default=No
 def quiz_submit(body: QuizSubmitIn, authorization: str | None = Header(default=None), x_token: str | None = Header(default=None, alias="X-Token")):
     member = current_member(authorization, x_token)
     with db.lock():
-        return logic.submit_quiz(member, body.answers, body.mode)
+        return logic.submit_quiz(member, body.answers, body.mode, body.track)
 
 
 @app.post("/api/checkin")
@@ -193,12 +226,13 @@ def get_words(
     status: str = "全部",
     page: int = 1,
     pageSize: int = 40,
+    lang: str = "",
     authorization: str | None = Header(default=None),
     x_token: str | None = Header(default=None, alias="X-Token"),
 ):
     member = current_member(authorization, x_token)
     with db.lock():
-        return logic.list_words(member, q, status, page, pageSize)
+        return logic.list_words(member, q, status, page, pageSize, lang)
 
 
 @app.get("/api/words/{word_id}")
@@ -275,11 +309,66 @@ def meta():
     if not wordbank.all_words():
         wordbank.load()
     return {
-        "name": "进步",
+        "name": "请叫我学习",
         "wordCount": wordbank.word_count(),
+        "koreanCount": wordbank.korean_count(),
         "grammarCount": wordbank.grammar_count(),
         "defaultPunishment": logic.DEFAULT_PUNISHMENT,
+        "quizCorrectPoints": logic.QUIZ_CORRECT_POINTS,
+        "plans": [
+            {"id": "cet4", "label": "四级英语"},
+            {"id": "korean", "label": "韩语入门"},
+            {"id": "both", "label": "四级英语 + 韩语"},
+        ],
     }
+
+
+def _tts_urls(lang: str, text: str) -> list[str]:
+    q = urllib.parse.quote(text)
+    if lang == "ko":
+        return [
+            f"https://dict.youdao.com/dictvoice?audio={q}&le=ko",
+            f"https://fanyi.baidu.com/gettts?lan=kor&text={q}&spd=3&source=web",
+        ]
+    return [
+        f"https://dict.youdao.com/dictvoice?audio={q}&type=2",
+        f"https://fanyi.baidu.com/gettts?lan=en&text={q}&spd=3&source=web",
+    ]
+
+
+def _fetch_tts(lang: str, text: str) -> bytes | None:
+    key = (lang, text)
+    cached = _TTS_CACHE.get(key)
+    if cached:
+        _TTS_CACHE.move_to_end(key)
+        return cached
+    for url in _tts_urls(lang, text):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = resp.read()
+                ctype = (resp.headers.get("Content-Type") or "").lower()
+            if data and ("audio" in ctype or "octet-stream" in ctype or data[:3] == b"ID3" or data[:1] == b"\xff"):
+                _TTS_CACHE[key] = data
+                while len(_TTS_CACHE) > _TTS_CACHE_MAX:
+                    _TTS_CACHE.popitem(last=False)
+                return data
+        except Exception:
+            continue
+    return None
+
+
+@app.get("/api/tts")
+def tts(lang: str = Query("en"), q: str = Query("")):
+    """Pronunciation audio for one word. Web Speech is preferred in the browser; this is the fallback."""
+    language = "ko" if lang in {"ko", "korean", "kor"} else "en"
+    text = " ".join((q or "").split())
+    if not text or len(text) > 40:
+        raise HTTPException(400, "请朗读一个单词")
+    audio = _fetch_tts(language, text)
+    if not audio:
+        raise HTTPException(502, "暂时读不出来，可以先看读音")
+    return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 # Static site. API routes above take precedence.
