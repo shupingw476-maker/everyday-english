@@ -550,17 +550,34 @@ p { margin: 0; }
   color: var(--ink-soft);
   font-size: 15px;
 }
-.speak-btn {
-  border: 1px solid var(--line);
+.reading.quiz-reading {
+  justify-content: flex-start;
+  margin: 8px 0 14px;
+  padding: 10px 12px;
   background: var(--surface);
-  color: var(--accent-ink);
-  border-radius: 999px;
-  min-height: 32px;
-  padding: 4px 12px;
-  font-size: 13px;
-  font-weight: 650;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
 }
-.speak-btn:hover { background: var(--accent-soft); border-color: transparent; }
+.speak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  min-height: 44px;
+  min-width: 84px;
+  padding: 6px 14px;
+  font-size: 15px;
+  font-weight: 700;
+  flex: none;
+}
+.speak-btn .speak-ico { display: inline-flex; line-height: 0; }
+.speak-btn:hover { background: var(--accent-hover); }
+.speak-btn:active { transform: translateY(1px); }
 .round-badge {
   margin-top: 12px;
   display: inline-block;
@@ -716,6 +733,55 @@ label.field select {
 .choice.wrong { background: var(--brick-soft); border-color: color-mix(in srgb, var(--brick) 35%, var(--line)); color: var(--brick); }
 .choice.dim { opacity: 0.55; }
 .choice:disabled { cursor: default; }
+.choice-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  padding-right: 10px;
+}
+.choice-wrap .choice,
+.choice-wrap .choice.correct,
+.choice-wrap .choice.wrong,
+.choice-wrap .choice.dim {
+  flex: 1 1 140px;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  min-width: 0;
+}
+.choice-wrap .choice-speak {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  flex: 1 1 150px;
+  max-width: 100%;
+  padding: 8px 0;
+}
+.choice-wrap .choice-speak .phon {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: right;
+}
+.choice-wrap.correct {
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+  color: var(--ok);
+}
+.choice-wrap.wrong {
+  background: var(--brick-soft);
+  border-color: color-mix(in srgb, var(--brick) 35%, var(--line));
+  color: var(--brick);
+}
+.choice-wrap.dim .choice { opacity: 0.55; }
 .feedback {
   margin-top: 14px;
   padding: 12px 14px;

@@ -906,7 +906,7 @@ def wrong_book_questions(member: dict, n: int = 10) -> list[dict]:
     for rec in sorted(wrong.values(), key=lambda x: x.get("lastWrong") or 0, reverse=True):
         snap = rec.get("snapshot")
         if snap and snap.get("choices"):
-            items.append(snap)
+            items.append(wordbank.enrich_question_speech(snap, custom_words(member["id"])))
     return items[:n]
 
 

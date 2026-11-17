@@ -108,22 +108,80 @@
     return el("button", {
       type: "button",
       class: "speak-btn",
-      "aria-label": "这个单词怎么读呀",
+      "data-speak": word || "",
+      "aria-label": "朗读 " + (word || ""),
       onClick: (e) => playPronunciation(word, lang, e),
-    }, "朗读");
+      onKeydown: (e) => e.stopPropagation(),
+    }, [
+      el("span", {
+        class: "speak-ico",
+        "aria-hidden": "true",
+        html: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5H4z" fill="currentColor"/><path d="M16 9.2a3.6 3.6 0 0 1 0 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18.2 7a6.4 6.4 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+      }),
+      "朗读",
+    ]);
   }
 
-  function readingBlock(w) {
+  function pronunciationLine(info, withWord) {
+    const lang = info && info.lang === "ko" ? "ko" : "en";
+    const ipa = String((info && info.ipa) || "").trim();
+    const word = String((info && info.word) || "").trim();
+    if (lang === "ko") {
+      const script = String((info && info.reading) || word).trim();
+      return ipa ? script + "  ·  " + ipa : script;
+    }
+    if (withWord) return ipa ? word + "  ·  " + ipa : word;
+    return ipa || "词库里没有音标，点朗读听读音";
+  }
+
+  function readingBlock(w, extraClass, withWord) {
     const lang = w.lang === "ko" ? "ko" : "en";
-    const phonetic = String(w.ipa || "").trim();
-    const script = lang === "ko" ? (w.reading || w.word) : "";
-    const line = lang === "ko"
-      ? (phonetic ? phonetic + "  ·  " + script : script)
-      : (phonetic || "词库里没有音标，点朗读听读音");
-    return el("div", { class: "reading" }, [
+    const line = pronunciationLine(w, withWord);
+    return el("div", { class: "reading" + (extraClass ? " " + extraClass : "") }, [
       el("span", { class: "lab" }, "读音"),
-      el("span", { class: "phon" }, line),
+      el("span", { class: "phon", "data-ipa": String(w.ipa || "").trim() }, line),
       speakButton(w.word, lang),
+    ]);
+  }
+
+  const PROMPT_WORD_TYPES = { en2zh: "en", ko2zh: "ko" };
+  const CHOICE_WORD_TYPES = { zh2en: "en", cloze: "en", zh2ko: "ko", kocloze: "ko" };
+
+  function questionSpeak(q) {
+    if (q && q.speak && q.speak.word) return q.speak;
+    if (!q) return null;
+    if (PROMPT_WORD_TYPES[q.type]) {
+      const lang = PROMPT_WORD_TYPES[q.type];
+      return { word: q.prompt, lang: lang, ipa: "", reading: lang === "ko" ? q.prompt : "" };
+    }
+    if (CHOICE_WORD_TYPES[q.type]) {
+      const word = (q.choices || [])[q.answer] || "";
+      if (!word) return null;
+      const lang = CHOICE_WORD_TYPES[q.type];
+      return { word: word, lang: lang, ipa: "", reading: lang === "ko" ? word : "" };
+    }
+    return null;
+  }
+
+  function choiceSpeakAt(q, i) {
+    const listed = q && q.choiceSpeak;
+    if (Array.isArray(listed)) {
+      const item = listed[i];
+      return item && item.word ? item : null;
+    }
+    const lang = CHOICE_WORD_TYPES[q && q.type];
+    const text = (q && q.choices || [])[i];
+    if (!lang || !text) return null;
+    return { word: text, lang: lang, ipa: "", reading: lang === "ko" ? text : "" };
+  }
+
+  function choicePronounce(info) {
+    const phon = info.lang === "ko"
+      ? pronunciationLine(info, false)
+      : String(info.ipa || "").trim();
+    return el("div", { class: "choice-speak" }, [
+      phon ? el("span", { class: "phon", "data-ipa": String(info.ipa || "").trim() }, phon) : null,
+      speakButton(info.word, info.lang),
     ]);
   }
 
@@ -990,26 +1048,42 @@
     if (quizRun.done) return viewQuizResult();
     const q = quizRun.questions[quizRun.index];
     if (!q) return el("div", { class: "view" }, "正在汇总…");
+    const speak = questionSpeak(q);
+    const promptIsWord = !!(speak && PROMPT_WORD_TYPES[q.type]);
     const wrap = el("div", { class: "view" });
-    wrap.append(
+    const head = [
       el("button", { class: "back-link", type: "button", onClick: () => { quizRun = null; go("quiz"); }, html: icon("back") + " 先离开" }),
       el("div", { class: "q-progress" }, (quizRun.mode === "wrong" ? "错题复习  ·  " : "") + (quizRun.index + 1) + " / " + quizRun.questions.length),
       el("div", { class: "session-bar" }, [el("span", { style: { width: Math.round((quizRun.index / quizRun.questions.length) * 100) + "%" } })]),
       el("div", { class: "q-type" }, TYPE_LABEL[q.type] || "练习"),
       el("div", { class: "q-prompt" + (q.type === "en2zh" || q.type === "zh2en" ? " serif" : "") }, q.prompt),
-      q.promptNote ? el("div", { class: "q-note" }, q.promptNote) : null
-    );
+    ];
+    if (promptIsWord) head.push(readingBlock(speak, "quiz-reading"));
+    if (q.promptNote) head.push(el("div", { class: "q-note" }, q.promptNote));
+    wrap.append(...head);
     const choices = el("div", { class: "choices" });
     (q.choices || []).forEach((text, i) => {
-      let cls = "choice";
+      let stateCls = "";
       if (quizRun.locked) {
-        if (i === q.answer) cls += " correct";
-        else if (i === quizRun.picked && i !== q.answer) cls += " wrong";
-        else cls += " dim";
+        if (i === q.answer) stateCls = "correct";
+        else if (i === quizRun.picked && i !== q.answer) stateCls = "wrong";
+        else stateCls = "dim";
       }
-      choices.append(
-        el("button", { type: "button", class: cls, disabled: quizRun.locked ? true : null, onClick: () => pickChoice(i) }, text)
-      );
+      const btn = el("button", {
+        type: "button",
+        class: "choice" + (stateCls ? " " + stateCls : ""),
+        disabled: quizRun.locked ? true : null,
+        onClick: () => pickChoice(i),
+      }, text);
+      const spoken = choiceSpeakAt(q, i);
+      if (spoken) {
+        choices.append(el("div", { class: "choice-wrap" + (stateCls ? " " + stateCls : "") }, [
+          btn,
+          choicePronounce(spoken),
+        ]));
+      } else {
+        choices.append(btn);
+      }
     });
     wrap.append(choices);
     if (quizRun.locked) {
@@ -1017,6 +1091,7 @@
       const feedback = [
         el("div", { class: "feedback " + (ok ? "ok" : "no") }, (ok ? "答对了。" : "还差一点。") + " " + (q.explain || "")),
       ];
+      if (speak) feedback.push(readingBlock(speak, "quiz-reading", true));
       if (ok) feedback.push(rewardBurst());
       feedback.push(el("div", { class: "btn-row" }, [
         el("button", { class: "btn btn-primary", type: "button", onClick: nextQuestion }, quizRun.index + 1 >= quizRun.questions.length ? "查看成绩" : "下一题"),
@@ -1075,11 +1150,13 @@
       const list = el("ul", { class: "miss-list" });
       misses.forEach((a) => {
         const q = a.snapshot;
+        const speak = questionSpeak(q);
         list.append(
           el("li", {}, [
             el("div", { class: "q" }, q.prompt),
             el("div", { class: "b" }, "你的答案：" + (q.choices[a.picked] ?? "未选")),
             el("div", { class: "a" }, "正确答案：" + q.choices[q.answer]),
+            speak ? readingBlock(speak, "quiz-reading", true) : null,
             q.explain ? el("div", { class: "soft", style: { marginTop: "4px" } }, q.explain) : null,
           ])
         );

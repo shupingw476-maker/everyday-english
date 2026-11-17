@@ -160,6 +160,147 @@ def _pack(qid: str, typ: str, prompt: str, note: str, choices: list[str], answer
     }
 
 
+_VOCAB_TYPES = {"en2zh", "zh2en", "cloze", "ko2zh", "zh2ko", "kocloze"}
+_WORD_CHOICE_TYPES = {"zh2en", "cloze", "zh2ko", "kocloze"}
+
+
+def speak_payload(word: dict | None, fallback: str = "", lang: str | None = None) -> dict | None:
+    """Pronunciation the quiz can show and play. English uses IPA; Korean uses Hangul plus revised romanization."""
+    if word is not None:
+        lang = "ko" if (word.get("lang") == "ko" or str(word.get("id") or "").startswith("ko_")) else "en"
+        text = (word.get("word") or fallback or "").strip()
+        if not text:
+            return None
+        reading = (word.get("reading") or "").strip()
+        if lang == "ko" and not reading:
+            reading = text
+        return {
+            "word": text,
+            "lang": lang,
+            "ipa": (word.get("ipa") or "").strip(),
+            "reading": reading,
+        }
+    text = (fallback or "").strip()
+    if not text:
+        return None
+    language = "ko" if lang == "ko" else "en"
+    return {
+        "word": text,
+        "lang": language,
+        "ipa": "",
+        "reading": text if language == "ko" else "",
+    }
+
+
+def _surface_index(pool: list[dict]) -> dict[str, dict]:
+    index: dict[str, dict] = {}
+    for item in pool:
+        key = (item.get("word") or "").strip()
+        if key and key not in index:
+            index[key] = item
+    return index
+
+
+def _question_word_id(q: dict) -> str:
+    parts = str(q.get("id") or "").split(":")
+    if len(parts) >= 2 and parts[0] in _VOCAB_TYPES:
+        return parts[1]
+    return ""
+
+
+def _lookup_word(word_id: str, extra_words: list[dict] | None) -> dict | None:
+    if not word_id:
+        return None
+    for item in extra_words or []:
+        if item.get("id") == word_id:
+            found = dict(item)
+            found.setdefault("lang", "ko" if word_id.startswith("ko_") else "en")
+            return found
+    if word_id.startswith("ko_"):
+        return get_korean(word_id)
+    return get_word(word_id)
+
+
+def _speech_pool(word: dict | None, extra_words: list[dict] | None, typ: str) -> list[dict]:
+    korean = typ in {"ko2zh", "zh2ko", "kocloze"} or (
+        word is not None and (word.get("lang") == "ko" or str(word.get("id") or "").startswith("ko_"))
+    )
+    if korean:
+        return list(_KO_WORDS)
+    extras = []
+    for item in extra_words or []:
+        found = dict(item)
+        found.setdefault("lang", "en")
+        extras.append(found)
+    return extras + list(_WORDS)
+
+
+def _fallback_speak(q: dict) -> dict | None:
+    typ = q.get("type") or ""
+    choices = q.get("choices") or []
+    answer = q.get("answer")
+    if typ == "en2zh":
+        return speak_payload(None, str(q.get("prompt") or ""), "en")
+    if typ == "ko2zh":
+        return speak_payload(None, str(q.get("prompt") or ""), "ko")
+    if typ in _WORD_CHOICE_TYPES and isinstance(answer, int) and 0 <= answer < len(choices):
+        lang = "ko" if typ in {"zh2ko", "kocloze"} else "en"
+        return speak_payload(None, str(choices[answer]), lang)
+    return None
+
+
+def _with_speech(q: dict, word: dict, pool: list[dict], choices_are_words: bool) -> dict:
+    speak = speak_payload(word)
+    if not speak:
+        return q
+    q["speak"] = speak
+    if not choices_are_words:
+        return q
+    index = _surface_index(pool)
+    answer = q.get("answer")
+    items = []
+    for i, choice in enumerate(q.get("choices") or []):
+        if i == answer:
+            items.append(speak)
+            continue
+        hit = index.get(str(choice).strip())
+        items.append(speak_payload(hit, fallback=str(choice), lang=speak["lang"]))
+    q["choiceSpeak"] = items
+    return q
+
+
+def enrich_question_speech(q: dict, extra_words: list[dict] | None = None) -> dict:
+    """Attach IPA / romanization so every vocabulary question can be read aloud.
+
+    Grammar items are left unchanged. Existing wrong-book snapshots are filled in
+    from the word id stored in the question id.
+    """
+    if not isinstance(q, dict):
+        return q
+    out = dict(q)
+    typ = out.get("type") or ""
+    if typ not in _VOCAB_TYPES:
+        return out
+    if out.get("speak") and out.get("speak", {}).get("word") and (
+        typ not in _WORD_CHOICE_TYPES or out.get("choiceSpeak")
+    ):
+        return out
+    word = _lookup_word(_question_word_id(out), extra_words)
+    if word:
+        return _with_speech(out, word, _speech_pool(word, extra_words, typ), typ in _WORD_CHOICE_TYPES)
+    speak = _fallback_speak(out)
+    if not speak:
+        return out
+    out["speak"] = speak
+    if typ in _WORD_CHOICE_TYPES:
+        answer = out.get("answer")
+        out["choiceSpeak"] = [
+            speak if i == answer else speak_payload(None, str(choice), speak["lang"])
+            for i, choice in enumerate(out.get("choices") or [])
+        ]
+    return out
+
+
 def make_en2zh(word: dict, pool: list[dict]) -> dict | None:
     meaning = (word.get("meaning") or "").strip()
     if not meaning:
@@ -277,7 +418,7 @@ def build_quiz(n: int = 10, recent_ids: list[str] | None = None, extra_words: li
         take(make_en2zh, usable, n - len(questions))
 
     random.shuffle(questions)
-    return questions[:n]
+    return [enrich_question_speech(q, extra_words) for q in questions[:n]]
 
 
 def rebuild_from_snapshot(snapshot: dict) -> dict:
@@ -305,8 +446,6 @@ def make_ko2zh(word: dict, pool: list[dict]) -> dict | None:
     ans = choices.index(meaning)
     roma = word.get("ipa") or ""
     note = "选择正确的中文意思"
-    if roma:
-        note = f"读音 {roma} · 选择正确的中文意思"
     explain = f"{word['word']} 的意思是「{meaning}」。"
     if roma:
         explain = f"{word['word']}（{roma}）的意思是「{meaning}」。"
@@ -403,4 +542,4 @@ def build_korean_quiz(n: int = 6, recent_ids: list[str] | None = None) -> list[d
     if len(questions) < n:
         take(make_ko2zh, pool, n - len(questions))
     random.shuffle(questions)
-    return questions[:n]
+    return [enrich_question_speech(q) for q in questions[:n]]
