@@ -1,4 +1,4 @@
-const CACHE = "jinbu-progress-v3";
+const CACHE = "jinbu-progress-v4";
 const ASSETS = [
   "./",
   "./index.html",

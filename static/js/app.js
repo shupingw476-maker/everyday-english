@@ -1,11 +1,19 @@
-/* 进步 Progress · 两人互相监督的四级学习界面 */
+/* 请叫我学习 · 两人互相监督的学习界面 */
 (function () {
   const $app = document.getElementById("app");
   const $header = document.getElementById("header");
   const $nav = document.getElementById("nav");
   const $toasts = document.getElementById("toasts");
 
-  const TYPE_LABEL = { en2zh: "英选中", zh2en: "中选英", cloze: "句子填空", grammar: "语法" };
+  const TYPE_LABEL = {
+    en2zh: "英选中",
+    zh2en: "中选英",
+    cloze: "句子填空",
+    grammar: "语法",
+    ko2zh: "韩选中",
+    zh2ko: "中选韩",
+    kocloze: "句子填空",
+  };
 
   let state = null;
   let meta = null;
@@ -50,6 +58,95 @@
     return `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">${paths[name] || ""}</svg>`;
   }
 
+  let speakAudio = null;
+
+  function quizPoints() {
+    return (meta && meta.quizCorrectPoints) || 15;
+  }
+
+  function playServerAudio(word, language) {
+    try {
+      if (speakAudio) speakAudio.pause();
+      speakAudio = new Audio("/api/tts?lang=" + language + "&q=" + encodeURIComponent(word));
+      const played = speakAudio.play();
+      if (played && played.catch) played.catch(() => toast("暂时读不出来，可以先看读音"));
+    } catch (e) {
+      toast("暂时读不出来，可以先看读音");
+    }
+  }
+
+  function playPronunciation(text, lang, event) {
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    const word = String(text || "").trim();
+    if (!word) return;
+    const language = lang === "ko" ? "ko" : "en";
+    const synth = window.speechSynthesis;
+    const wechat = /MicroMessenger/i.test(navigator.userAgent || "");
+    const voices = synth && synth.getVoices ? synth.getVoices() : [];
+    const prefix = language === "ko" ? "ko" : "en";
+    const voice = (voices || []).find((v) => (v.lang || "").toLowerCase().startsWith(prefix));
+    const canSpeak = !!(synth && window.SpeechSynthesisUtterance && !wechat && (voice || !(voices || []).length));
+    if (canSpeak) {
+      try {
+        const utter = new SpeechSynthesisUtterance(word);
+        utter.lang = language === "ko" ? "ko-KR" : "en-US";
+        utter.rate = 0.9;
+        if (voice) utter.voice = voice;
+        utter.onerror = () => playServerAudio(word, language);
+        synth.cancel();
+        synth.speak(utter);
+        return;
+      } catch (e) {}
+    }
+    playServerAudio(word, language);
+  }
+
+  function speakButton(word, lang) {
+    return el("button", {
+      type: "button",
+      class: "speak-btn",
+      "aria-label": "这个单词怎么读呀",
+      onClick: (e) => playPronunciation(word, lang, e),
+    }, "朗读");
+  }
+
+  function readingBlock(w) {
+    const lang = w.lang === "ko" ? "ko" : "en";
+    const phonetic = String(w.ipa || "").trim();
+    const script = lang === "ko" ? (w.reading || w.word) : "";
+    const line = lang === "ko"
+      ? (phonetic ? phonetic + "  ·  " + script : script)
+      : (phonetic || "词库里没有音标，点朗读听读音");
+    return el("div", { class: "reading" }, [
+      el("span", { class: "lab" }, "读音"),
+      el("span", { class: "phon" }, line),
+      speakButton(w.word, lang),
+    ]);
+  }
+
+  function exampleBlock(w) {
+    return el("div", { class: "example" }, [
+      el("div", { class: "lab" }, "造句"),
+      el("div", { class: "en-line" }, w.example || "（例句准备中）"),
+      w.exampleZh ? el("div", { class: "zh-line" }, w.exampleZh) : null,
+    ]);
+  }
+
+  function rewardBurst() {
+    const spots = [[-36, -16], [32, -20], [-14, -34], [16, -6], [-24, 8], [6, -30]];
+    const sparks = spots.map(([x, y], i) => el("span", {
+      class: "spark",
+      style: { "--dx": x + "px", "--dy": y + "px", animationDelay: (i * 0.03) + "s" },
+    }));
+    return el("div", { class: "reward-pop", role: "status" }, [
+      el("div", { class: "reward-badge" }, "答对了  +" + quizPoints()),
+      ...sparks,
+    ]);
+  }
+
   function toast(msg) {
     if (!$toasts) return;
     $toasts.innerHTML = "";
@@ -88,7 +185,7 @@
     if (!("Notification" in window)) return;
     if (Notification.permission === "granted") {
       try {
-        new Notification("进步", {
+        new Notification("请叫我学习", {
           body: st.partner.name + "昨天没打卡了，按约定去催一下！",
           icon: "./icons/icon-192.png",
         });
@@ -117,9 +214,8 @@
           html: icon("gear"),
         });
     $header.append(
-      el("a", { class: "wordmark", href: authed ? "#/home" : "#/gate", "aria-label": "进步" }, [
-        el("span", { class: "cn" }, "进步"),
-        el("span", { class: "en" }, "Progress"),
+      el("a", { class: "wordmark", href: authed ? "#/home" : "#/gate", "aria-label": "请叫我学习" }, [
+        el("span", { class: "cn" }, "请叫我学习"),
       ]),
       right
     );
@@ -133,7 +229,7 @@
       ["home", "今日", "home"],
       ["words", "单词", "book"],
       ["quiz", "做题", "quiz"],
-      ["progress", "进步", "trend"],
+      ["progress", "进度", "trend"],
     ];
     $nav.innerHTML = "";
     items.forEach(([id, label, ic]) => {
@@ -156,8 +252,8 @@
     const wrap = el("div", { class: "gate" });
     const tab = (session && session.gateTab) || "create";
     wrap.append(
-      el("h1", {}, "一起进步"),
-      el("p", { class: "lead" }, "这是给两个人互相监督的四级英语学习站。一个人建房间，把邀请码发给朋友，两个人每天打卡、互相催促。")
+      el("h1", {}, "请叫我学习"),
+      el("p", { class: "lead" }, "两个人互相监督。一个人建房间，把邀请码发给朋友。默认学四级英语；也可以把其中一个人改成韩语，或英语加韩语。房间还是两个人。")
     );
     wrap.append(
       el("div", { class: "tabs", role: "tablist" }, [
@@ -170,9 +266,30 @@
     return wrap;
   }
 
+  function planField(values, gateTab) {
+    const current = values.studyPlan || "cet4";
+    const select = el("select", {
+      onChange: (e) => {
+        values.studyPlan = e.target.value;
+        const patch = gateTab === "join"
+          ? { gateTab: "join", join: values }
+          : { gateTab: "create", create: values };
+        session = Object.assign(session || {}, patch);
+      },
+    });
+    [["cet4", "四级英语"], ["korean", "韩语入门"], ["both", "四级英语 + 韩语"]].forEach(([id, label]) => {
+      select.append(el("option", { value: id, selected: current === id ? true : null }, label));
+    });
+    return el("label", { class: "field" }, [
+      "我的学习计划",
+      select,
+      el("p", { class: "tiny muted" }, "默认四级英语。计划记在你自己身上，房间仍然是两个人。"),
+    ]);
+  }
+
   function createForm() {
     const values = Object.assign(
-      { name: "", friendName: "", punishmentText: (meta && meta.defaultPunishment) || "昨天没打卡的人，要被催，并且下一天要多做一份惩罚任务" },
+      { name: "", friendName: "", studyPlan: "cet4", punishmentText: (meta && meta.defaultPunishment) || "昨天没打卡的人，要被催，并且下一天要多做一份惩罚任务" },
       (session && session.create) || {}
     );
     const form = el("div", { class: "card" });
@@ -194,6 +311,7 @@
         ])
       );
     });
+    form.append(planField(values, "create"));
     form.append(
       el("label", { class: "field" }, [
         "惩罚约定",
@@ -213,6 +331,7 @@
                 name: values.name,
                 friendName: values.friendName,
                 punishmentText: values.punishmentText,
+                studyPlan: values.studyPlan || "cet4",
               });
               API.setToken(res.token);
               state = res.state;
@@ -232,7 +351,7 @@
   }
 
   function joinForm() {
-    const values = Object.assign({ code: "", name: "" }, (session && session.join) || {});
+    const values = Object.assign({ code: "", name: "", studyPlan: "cet4" }, (session && session.join) || {});
     const form = el("div", { class: "card" });
     form.append(
       el("label", { class: "field" }, [
@@ -256,7 +375,8 @@
           onInput: (e) => { values.name = e.target.value; session = Object.assign(session || {}, { gateTab: "join", join: values }); },
         }),
       ]),
-      el("p", { class: "tiny muted" }, "如果这个房间里已经有你用过的同一个昵称，会重新登录到你原来的进度。"),
+      planField(values, "join"),
+      el("p", { class: "tiny muted" }, "如果这个房间里已经有你用过的同一个昵称，会重新登录到你原来的进度，学习计划也不会被改掉。新加入的人默认学四级英语。"),
       el("div", { class: "btn-row" }, [
         el("button", {
           class: "btn btn-primary",
@@ -265,7 +385,7 @@
             if (busy) return;
             busy = true;
             try {
-              const res = await API.joinRoom({ code: values.code, name: values.name });
+              const res = await API.joinRoom({ code: values.code, name: values.name, studyPlan: values.studyPlan || "cet4" });
               API.setToken(res.token);
               state = res.state;
               session = null;
@@ -313,16 +433,15 @@
       el("div", { class: "card", style: { marginTop: "14px" } }, [
         el("div", { class: "card-title" }, [
           el("h2", {}, "今日任务"),
-          el("span", { class: "side" }, me.checkinToday ? "已打卡" : plan.punishment ? "含惩罚任务" : "两项都完成才能打卡"),
+          el("span", { class: "side" }, me.checkinToday ? "已打卡" : plan.punishment ? "含惩罚任务" : ((plan.tracks || []).length > 1 ? "每门都完成才能打卡" : "完成才能打卡")),
         ]),
-        taskRow("待复习单词", plan.dueDone, plan.dueTotal, plan.dueTotal === 0 ? "今日无需复习" : null),
-        taskRow("新词" + (plan.punishment ? "（含惩罚 20 个）" : ""), plan.newDone, plan.newTotal, plan.newTotal === 0 ? "暂无新词" : null),
-        taskRow("做题", plan.quizDone, plan.quizTarget, plan.quizTarget > 1 ? plan.quizDone + " / " + plan.quizTarget + " 组（含惩罚）" : (plan.quizDone >= 1 ? "今天已完成" : "1 组（10 题）")),
-        el("div", { class: "rule-box" }, "打卡规则：完成今天的到期复习和新词，并且做完规定的题组，才算打卡。中断一天，连续学习会清零，第二天还要多做一份惩罚任务。"),
-      ]),
-      el("div", { class: "btn-row" }, [
-        el("button", { class: "btn btn-primary", type: "button", onClick: startVocab }, plan.dueLeft + plan.newLeft === 0 ? "单词已经练完" : "开始记单词"),
-        el("button", { class: "btn btn-ghost", type: "button", onClick: () => startQuiz("normal") }, plan.quizComplete ? "再做一组题" : "开始做题"),
+        ...((plan.tracks && plan.tracks.length) ? plan.tracks.map(trackBlock) : [
+          taskRow("待复习单词", plan.dueDone, plan.dueTotal, null),
+          taskRow("新词", plan.newDone, plan.newTotal, null),
+          taskRow("做题", plan.quizDone, plan.quizTarget, null),
+        ]),
+        el("div", { class: "rule-box" }, plan.requirementText || "打卡规则：完成今天列出的复习、新词和题目，才算打卡。中断一天，连续学习会清零，第二天还要多做一份惩罚任务。"),
+        el("div", { class: "rule-box" }, plan.memoryText || "每个词本轮答对 5 次才过关。过关后按 1、2、4、7、15、30 天复习。"),
       ]),
       inviteCard(),
       el("div", { class: "card", style: { marginTop: "14px" } }, [
@@ -353,6 +472,7 @@
     return el("div", { class: "person" + (isMe ? " me" : "") }, [
       el("div", { class: "who" }, who),
       el("div", { class: "nm" }, p.name),
+      p.studyPlanLabel ? el("div", { class: "plan-line" }, p.studyPlanLabel) : null,
       el("div", { class: "row" }, [el("span", {}, "连续"), el("span", {}, p.streak + " 天")]),
       el("div", { class: "row" }, [el("span", {}, "积分"), el("span", {}, p.points + " · Lv." + p.level)]),
       p.checkinToday
@@ -391,6 +511,65 @@
         }, "复制"),
       ]),
     ]);
+  }
+
+  function trackBlock(track) {
+    const ko = track.id === "korean";
+    const title = ko ? "韩语" : "四级英语";
+    const quizName = ko ? "韩语小测" : "英语做题";
+    const quizHint = track.quizTarget > 1
+      ? track.quizDone + " / " + track.quizTarget + " 组（含惩罚，每组 " + track.quizSize + " 题）"
+      : (track.quizComplete ? "今天已完成" : "1 组（" + track.quizSize + " 题）");
+    return el("div", { class: "track-block" }, [
+      el("h3", { class: "track-name" }, title),
+      taskRow(title + "复习", track.dueDone, track.dueTotal, track.dueTotal === 0 ? "今日无需复习" : null),
+      taskRow(title + "新词", track.newDone, track.newTotal, track.newTotal === 0 ? "暂无新词" : null),
+      taskRow(quizName, track.quizDone, track.quizTarget, quizHint),
+      trackActions(track),
+    ]);
+  }
+
+  function trackActions(track) {
+    const ko = track.id === "korean";
+    const vocabLeft = (track.dueLeft || 0) + (track.newLeft || 0);
+    return el("div", { class: "btn-row", style: { marginTop: "8px" } }, [
+      el("button", {
+        class: "btn " + (ko ? "btn-ghost" : "btn-primary"),
+        type: "button",
+        "data-track": track.id,
+        onClick: () => startVocab(track.id),
+      }, vocabLeft === 0 ? (ko ? "韩语单词已完成" : "英语单词已完成") : (ko ? "记韩语" : "记英语")),
+      el("button", {
+        class: "btn btn-ghost",
+        type: "button",
+        "data-track": track.id,
+        onClick: () => startQuiz("normal", track.id),
+      }, track.quizComplete ? (ko ? "再做一组韩语" : "再做一组英语") : (ko ? "韩语小测" : "做英语题")),
+    ]);
+  }
+
+  function studyButtons(plan) {
+    const tracks = (plan && plan.tracks) || [];
+    const row = el("div", { class: "btn-row" });
+    if (!tracks.length) {
+      row.append(el("button", { class: "btn btn-primary", type: "button", onClick: () => startVocab("cet4") }, "开始记单词"));
+      return row;
+    }
+    tracks.forEach((track) => {
+      const ko = track.id === "korean";
+      const vocabLeft = (track.dueLeft || 0) + (track.newLeft || 0);
+      row.append(el("button", {
+        class: "btn " + (ko ? "btn-ghost" : "btn-primary"),
+        type: "button",
+        onClick: () => startVocab(track.id),
+      }, vocabLeft === 0 ? (ko ? "韩语单词已完成" : "英语单词已完成") : (ko ? "记韩语" : "记英语")));
+      row.append(el("button", {
+        class: "btn btn-ghost",
+        type: "button",
+        onClick: () => startQuiz("normal", track.id),
+      }, track.quizComplete ? (ko ? "再做一组韩语" : "再做一组英语") : (ko ? "韩语小测" : "做英语题")));
+    });
+    return row;
   }
 
   function taskRow(name, done, total, extra) {
@@ -439,13 +618,17 @@
     box.append(
       el("div", { class: "card" }, [
         el("div", { class: "card-title" }, [el("h2", {}, "今天的安排"), el("span", { class: "side" }, plan.punishment ? "含惩罚任务" : "复习优先")]),
-        taskRow("待复习", plan.dueDone, plan.dueTotal, plan.dueTotal === 0 ? "今日无需复习" : null),
-        taskRow("新词", plan.newDone, plan.newTotal, null),
+        ...((plan.tracks && plan.tracks.length) ? plan.tracks.map((track) => el("div", { class: "track-block" }, [
+          el("h3", { class: "track-name" }, track.id === "korean" ? "韩语" : "四级英语"),
+          taskRow("复习", track.dueDone, track.dueTotal, track.dueTotal === 0 ? "今日无需复习" : null),
+          taskRow("新词", track.newDone, track.newTotal, track.newTotal === 0 ? "暂无新词" : null),
+          trackActions(track),
+        ])) : [
+          taskRow("复习", plan.dueDone, plan.dueTotal, null),
+          taskRow("新词", plan.newDone, plan.newTotal, null),
+          trackActions({ id: "cet4", dueLeft: plan.dueLeft, newLeft: plan.newLeft, quizComplete: plan.quizComplete, quizTarget: plan.quizTarget, quizSize: 10 }),
+        ]),
       ]),
-      el("div", { class: "btn-row" }, [
-        el("button", { class: "btn btn-primary", type: "button", onClick: startVocab },
-          (plan.dueLeft || 0) + (plan.newLeft || 0) === 0 ? "今天的单词已经完成" : "开始记单词"),
-      ])
     );
     return box;
   }
@@ -454,12 +637,29 @@
     const box = el("div", {});
     const q = listState.query || "";
     const filter = listState.filter || "全部";
+    const langs = (function () {
+      const tracks = (state && state.me && state.me.plan && state.me.plan.tracks) || [];
+      const out = [];
+      if (!tracks.length || tracks.some((t) => t.id === "cet4")) out.push(["en", "英语"]);
+      if (tracks.some((t) => t.id === "korean")) out.push(["ko", "韩语"]);
+      return out;
+    })();
+    if (!langs.some(([id]) => id === listState.lang)) listState.lang = (langs[0] && langs[0][0]) || "";
+    if (langs.length > 1) {
+      box.append(el("div", { class: "chips" }, langs.map(([id, label]) =>
+        el("button", {
+          type: "button",
+          class: "chip" + (listState.lang === id ? " on" : ""),
+          onClick: () => { listState.lang = id; listState.page = 1; loadWordPage(true); },
+        }, label)
+      )));
+    }
     box.append(
       el("div", { class: "search" }, [
         el("span", { html: icon("search") }),
         el("input", {
           type: "search",
-          placeholder: "搜索英文或中文（四级词库）",
+          placeholder: "搜索单词、读音或中文",
           value: q,
           "aria-label": "搜索单词",
           onChange: (e) => { listState.query = e.target.value; listState.page = 1; loadWordPage(true); },
@@ -503,7 +703,9 @@
         ])
       );
     }
-    box.append(el("div", { class: "btn-row" }, [el("button", { class: "btn btn-ghost", type: "button", onClick: () => openAddWord() }, "添加自定义单词")]));
+    if (listState.lang !== "ko") {
+      box.append(el("div", { class: "btn-row" }, [el("button", { class: "btn btn-ghost", type: "button", onClick: () => openAddWord() }, "添加自定义单词")]));
+    }
     return box;
   }
 
@@ -514,6 +716,7 @@
         status: listState.filter || "全部",
         page: listState.page || 1,
         pageSize: 40,
+        lang: listState.lang || "",
       });
       listState.total = data.total;
       listState.page = data.page;
@@ -526,16 +729,17 @@
     }
   }
 
-  async function startVocab() {
+  async function startVocab(track) {
     try {
-      const data = await API.session();
+      const data = await API.session(track || "");
       let items = data.items || [];
       if (!items.length) {
-        toast("今天没有要学的单词了。可以去词库里复习，或明天再来。");
+        toast("今天这门没有要学的单词了。可以去词库里看，或明天再来。");
         return;
       }
       session = {
         listTab: "today",
+        track: (items[0] && items[0].track) || track || "cet4",
         items,
         index: 0,
         flipped: false,
@@ -557,8 +761,10 @@
 
   function viewSession() {
     if (!session || !session.items) {
-      startVocab();
-      return el("div", { class: "view" }, "正在准备…");
+      return el("div", { class: "view" }, [
+        el("p", {}, "请从今日任务里选择要学的一门。"),
+        el("button", { class: "btn btn-primary", type: "button", onClick: () => go("home") }, "回到今日"),
+      ]);
     }
     if (session.done) return viewRecap();
     const item = currentCard();
@@ -570,12 +776,13 @@
     const idx = session.index;
     const pct = Math.round((idx / total) * 100);
     const w = item.word;
+    const langLabel = w.lang === "ko" ? "韩语" : "英语";
     const wrap = el("div", { class: "view" });
     wrap.append(
       el("button", { class: "back-link", type: "button", onClick: () => { session.listTab = "today"; go("words"); }, html: icon("back") + " 先离开" }),
-      el("div", { class: "session-top" }, [
-        el("span", {}, (item.kind === "new" ? "新词" : "复习") + "  ·  " + (idx + 1) + " / " + total),
-        el("span", {}, "点开卡片看释义"),
+        el("div", { class: "session-top" }, [
+        el("span", {}, langLabel + "  ·  " + (item.kind === "new" ? "新词" : "复习") + "  ·  " + (idx + 1) + " / " + total),
+        el("span", {}, "本轮 " + ((item.roundCorrect || 0) + "/" + (item.roundNeed || 5))),
       ]),
       el("div", { class: "session-bar" }, [el("span", { style: { width: pct + "%" } })])
     );
@@ -589,33 +796,36 @@
     });
     card.append(
       el("div", { class: "face front" }, [
-        el("div", { class: "kind-tag" }, item.kind === "new" ? "新词" : "复习"),
-        el("div", { class: "en-word" }, w.word),
-        w.ipa ? el("div", { class: "ipa" }, w.ipa) : null,
+        el("div", { class: "kind-tag" }, (item.kind === "new" ? "新词" : "复习") + " · " + langLabel),
+        el("div", { class: "en-word" + (w.lang === "ko" ? " ko" : "") }, w.word),
+        readingBlock(w),
+        roundBadge(item),
         el("div", { class: "hint" }, "先试着回忆它的意思，再点开卡片"),
       ]),
       el("div", { class: "face back" }, [
-        el("div", { class: "kind-tag" }, item.kind === "new" ? "新词" : "复习"),
-        el("div", { class: "en-word" }, w.word),
-        w.ipa ? el("div", { class: "ipa" }, w.ipa) : null,
+        el("div", { class: "kind-tag" }, (item.kind === "new" ? "新词" : "复习") + " · " + langLabel),
+        el("div", { class: "en-word" + (w.lang === "ko" ? " ko" : "") }, w.word),
+        readingBlock(w),
+        roundBadge(item),
         el("div", { class: "meaning" }, w.meaning),
-        (w.example || w.exampleZh)
-          ? el("div", { class: "example" }, [
-              w.example ? el("div", { class: "en-line" }, w.example) : null,
-              w.exampleZh ? el("div", { class: "zh-line" }, w.exampleZh) : null,
-            ])
-          : null,
+        exampleBlock(w),
       ])
     );
     wrap.append(el("div", { class: "flash-wrap" }, [card]));
     wrap.append(
       el("div", { class: "rate-row" + (session.flipped ? " show" : "") }, [
-        rateBtn("again", "不认识", "今天再看"),
-        rateBtn("hard", "模糊", "+1 天"),
-        rateBtn("know", "认识", "加长间隔"),
+        rateBtn("again", "不认识", "计数清零"),
+        rateBtn("hard", "模糊", "减 1 次"),
+        rateBtn("know", "认识", "+1 次"),
       ])
     );
     return wrap;
+  }
+
+  function roundBadge(item) {
+    const got = item.roundCorrect || 0;
+    const need = item.roundNeed || 5;
+    return el("div", { class: "round-badge" }, "本轮 " + got + "/" + need);
   }
 
   function flipCard() {
@@ -641,10 +851,20 @@
       if (rating === "know") session.results.know += 1;
       else if (rating === "hard") session.results.hard += 1;
       else session.results.again += 1;
-      if (rating === "again") {
-        const id = item.word.id;
-        session.againCounts[id] = (session.againCounts[id] || 0) + 1;
-        if (session.againCounts[id] < 2) session.items.push({ word: item.word, kind: "review" });
+      const id = item.word.id;
+      session.items = session.items.filter((card, i) => i <= session.index || card.word.id !== id);
+      if (!result.roundComplete) {
+        session.items.push({
+          word: item.word,
+          kind: item.kind,
+          track: item.track,
+          punishment: item.punishment,
+          roundCorrect: result.roundCorrect || 0,
+          roundNeed: result.roundNeed || 5,
+        });
+      } else {
+        const days = result.interval || 1;
+        toast("过关 " + (result.roundNeed || 5) + "/" + (result.roundNeed || 5) + "，" + (days <= 1 ? "明天再复习" : days + " 天后再复习"));
       }
       announceCheckin(result.checkin);
       session.index += 1;
@@ -660,7 +880,7 @@
 
   async function finishSession() {
     try {
-      const extra = await API.completeVocab();
+      const extra = await API.completeVocab(session.track);
       if (extra && extra.plan && state && state.me) state.me.plan = extra.plan;
       if (extra && extra.checkin) announceCheckin(extra.checkin);
       await refreshState().catch(() => {});
@@ -687,7 +907,7 @@
       ]),
       el("div", { class: "btn-row" }, [
         el("button", { class: "btn btn-primary", type: "button", onClick: () => { session = { listTab: "today" }; go("home"); } }, "回到今日"),
-        el("button", { class: "btn btn-ghost", type: "button", onClick: startVocab }, "再练一组"),
+        el("button", { class: "btn btn-ghost", type: "button", onClick: () => startVocab(session.track) }, "再练一组"),
       ])
     );
     return wrap;
@@ -699,32 +919,51 @@
   /* ---------- Quiz ---------- */
   function viewQuizHub() {
     const plan = (state.me && state.me.plan) || {};
+    const tracks = plan.tracks || [];
     const wrong = (state.me && state.me.stats && state.me.stats.wrongCount) || 0;
     const wrap = el("div", { class: "view" });
+    if (!tracks.length || tracks.some((t) => t.id === "cet4")) {
+      const en = tracks.find((t) => t.id === "cet4");
+      wrap.append(
+        el("div", { class: "card" }, [
+          el("h2", {}, "做一组四级题"),
+          el("p", { class: "soft", style: { margin: "8px 0 0", fontSize: "14px" } }, "每次 10 题，从四级词库出词汇题，再加一些语法题。打卡需要完成 " + ((en && en.quizTarget) || 1) + " 组。答对会有积分奖励。"),
+        ]),
+        el("div", { class: "btn-row" }, [
+          el("button", { class: "btn btn-primary", type: "button", onClick: () => startQuiz("normal", "cet4") }, "开始做英语题"),
+        ])
+      );
+    }
+    if (tracks.some((t) => t.id === "korean")) {
+      const ko = tracks.find((t) => t.id === "korean");
+      wrap.append(
+        el("div", { class: "card", style: { marginTop: "14px" } }, [
+          el("h2", {}, "韩语小测"),
+          el("p", { class: "soft", style: { margin: "8px 0 0", fontSize: "14px" } }, "每次 " + ((ko && ko.quizSize) || 6) + " 题，只从韩语词库出题。它只计入韩语打卡，不会代替英语那一组。答对同样有奖励。"),
+        ]),
+        el("div", { class: "btn-row" }, [
+          el("button", { class: "btn btn-primary", type: "button", onClick: () => startQuiz("normal", "korean") }, "开始韩语小测"),
+        ])
+      );
+    }
     wrap.append(
-      el("div", { class: "card" }, [
-        el("h2", {}, "做一组四级题"),
-        el("p", { class: "soft", style: { margin: "8px 0 0", fontSize: "14px" } }, "每次 10 题，从四级词库出词汇题，再加一些语法题。打卡需要完成 " + (plan.quizTarget || 1) + " 组。"),
-      ]),
-      el("div", { class: "btn-row" }, [
-        el("button", { class: "btn btn-primary", type: "button", onClick: () => startQuiz("normal") }, "开始做题"),
-      ]),
       el("div", { class: "card", style: { marginTop: "16px" } }, [
         el("div", { class: "card-title" }, [el("h2", {}, "错题本"), el("span", { class: "side" }, wrong ? wrong + " 题" : "空")]),
         el("p", { class: "soft", style: { fontSize: "14px" } }, "同一道错题连续答对两次，就会从错题本里移除。"),
         el("div", { class: "btn-row" }, [
-          el("button", { class: "btn btn-ghost", type: "button", disabled: wrong ? null : true, onClick: () => startQuiz("wrong") }, wrong ? "复习错题" : "暂时没有错题"),
+          el("button", { class: "btn btn-ghost", type: "button", disabled: wrong ? null : true, onClick: () => startQuiz("wrong", (tracks[0] && tracks[0].id) || "cet4") }, wrong ? "复习错题" : "暂时没有错题"),
         ]),
       ])
     );
     return wrap;
   }
 
-  async function startQuiz(mode) {
+  async function startQuiz(mode, track) {
     try {
-      const data = await API.quiz(mode);
+      const data = await API.quiz(mode, track || "cet4");
       quizRun = {
         mode: data.mode || mode,
+        track: data.track || track || "cet4",
         questions: data.questions || [],
         index: 0,
         locked: false,
@@ -745,7 +984,7 @@
 
   function viewQuizPlay() {
     if (!quizRun) {
-      startQuiz("normal");
+      startQuiz("normal", "cet4");
       return el("div", { class: "view" }, "正在出题…");
     }
     if (quizRun.done) return viewQuizResult();
@@ -775,12 +1014,14 @@
     wrap.append(choices);
     if (quizRun.locked) {
       const ok = quizRun.picked === q.answer;
-      wrap.append(
+      const feedback = [
         el("div", { class: "feedback " + (ok ? "ok" : "no") }, (ok ? "答对了。" : "还差一点。") + " " + (q.explain || "")),
-        el("div", { class: "btn-row" }, [
-          el("button", { class: "btn btn-primary", type: "button", onClick: nextQuestion }, quizRun.index + 1 >= quizRun.questions.length ? "查看成绩" : "下一题"),
-        ])
-      );
+      ];
+      if (ok) feedback.push(rewardBurst());
+      feedback.push(el("div", { class: "btn-row" }, [
+        el("button", { class: "btn btn-primary", type: "button", onClick: nextQuestion }, quizRun.index + 1 >= quizRun.questions.length ? "查看成绩" : "下一题"),
+      ]));
+      wrap.append(...feedback);
     }
     return wrap;
   }
@@ -805,7 +1046,7 @@
 
   async function endQuiz() {
     try {
-      const summary = await API.submitQuiz(quizRun.mode, quizRun.answers);
+      const summary = await API.submitQuiz(quizRun.mode, quizRun.answers, quizRun.track);
       quizRun.done = true;
       quizRun.summary = summary;
       announceCheckin(summary.checkin);
@@ -848,7 +1089,7 @@
     wrap.append(
       el("div", { class: "btn-row", style: { marginTop: "16px" } }, [
         el("button", { class: "btn btn-primary", type: "button", onClick: () => { quizRun = null; go("home"); } }, "回到今日"),
-        el("button", { class: "btn btn-ghost", type: "button", onClick: () => startQuiz(quizRun.mode) }, "再做一组"),
+        el("button", { class: "btn btn-ghost", type: "button", onClick: () => startQuiz(quizRun.mode, quizRun.track) }, "再做一组"),
       ])
     );
     return wrap;
@@ -868,7 +1109,7 @@
       el("div", { class: "card" }, [
         el("div", { class: "card-title" }, [el("h2", {}, "连续打卡"), el("span", { class: "side" }, (st.streak || 0) + " 天")]),
         weekStrip((state.me && state.me.week) || []),
-        el("p", { class: "tiny muted", style: { marginTop: "10px" } }, "完成当天的单词和做题并成功打卡，才会记入连续学习。中断一天会重新开始。"),
+        el("p", { class: "tiny muted", style: { marginTop: "10px" } }, "完成当天的复习、新词和做题并成功打卡，才会记入连续学习。中断一天会重新开始。"),
       ]),
       el("div", { class: "stat-list", style: { margin: "14px 0" } }, [
         statBox("已开始的单词", String(st.started || 0)),
@@ -879,13 +1120,17 @@
         statBox("错题本", String(st.wrongCount || 0) + " 题"),
       ]),
       el("div", { class: "card" }, [
+        el("h2", {}, "记忆方法"),
+        el("p", { class: "soft", style: { fontSize: "14px", marginTop: "8px" } }, (state.me && state.me.plan && state.me.plan.memoryText) || "每个词本轮答对 5 次才过关，之后按 1、2、4、7、15、30 天复习。"),
+      ]),
+      el("div", { class: "card" }, [
         el("div", { class: "card-title" }, [el("h2", {}, "积分规则")]),
         el("ul", { class: "rules" }, [
           rule("单词评为「认识」", "+8"),
           rule("单词评为「模糊」", "+3"),
           rule("单词评为「不认识」", "+1"),
-          rule("做题答对", "+10"),
-          rule("做题答错（也算练了）", "+2"),
+          rule("做题答对（含奖励）", "+" + quizPoints()),
+          rule("做题答错", "不加分"),
           rule("完成打卡（每天一次）", "+30"),
           rule("连续打卡满 3 / 7 / 14 天（各奖励一次）", "+15 / +30 / +50"),
         ]),
@@ -900,7 +1145,7 @@
     const me = state.me;
     const wrap = el("div", { class: "view" });
     wrap.append(
-      el("button", { class: "back-link", type: "button", onClick: () => go("progress"), html: icon("back") + " 返回进步" }),
+      el("button", { class: "back-link", type: "button", onClick: () => go("progress"), html: icon("back") + " 返回进度" }),
       el("h1", { style: { fontSize: "24px", marginBottom: "12px" } }, "设置"),
       el("div", { class: "card" }, [
         el("h2", {}, "房间"),
@@ -914,10 +1159,22 @@
         ]),
       ]),
       el("div", { class: "card" }, [
+        el("h2", {}, "学习计划"),
+        (function () {
+          const current = me.studyPlan || "cet4";
+          const select = el("select", { onChange: (e) => saveSettings({ studyPlan: e.target.value }) });
+          [["cet4", "四级英语"], ["korean", "韩语入门"], ["both", "四级英语 + 韩语"]].forEach(([id, label]) => {
+            select.append(el("option", { value: id, selected: current === id ? true : null }, label));
+          });
+          return el("label", { class: "field" }, ["当前计划", select]);
+        })(),
+        el("p", { class: "tiny muted" }, "默认是四级英语。改成韩语或两门一起，只影响你自己，同伴和房间人数不变。今天还没开始的那一门，会按新计划重算。"),
+      ]),
+      el("div", { class: "card" }, [
         el("h2", {}, "每天的学习量"),
-        fieldNum("每日新词数量", "dailyNew", me.settings.dailyNew, 5, 40),
-        fieldNum("每日复习上限", "reviewCap", me.settings.reviewCap, 5, 80),
-        el("p", { class: "tiny muted" }, "若昨天没打卡，第二天会在此基础上多 20 个单词、多一组题。"),
+        fieldNum("每日新词数量（四级英语）", "dailyNew", me.settings.dailyNew, 5, 40),
+        fieldNum("每日复习上限（四级英语）", "reviewCap", me.settings.reviewCap, 5, 80),
+        el("p", { class: "tiny muted" }, "复习排在新词前面，都要做完才能打卡。每个词要在本轮答对 5 次才过关。英语若昨天没打卡，第二天会多 20 个新词、多一组题。韩语每天 8 个新词、复习最多 24 个，小测每组 6 题；没打卡时韩语再加 8 个新词和一组小测。"),
       ]),
       el("div", { class: "card" }, [
         el("h2", {}, "打卡提醒"),
@@ -994,7 +1251,7 @@
   async function exportData() {
     try {
       const data = await API.exportData();
-      const blob = new Blob([JSON.stringify({ app: "进步 Progress", data }, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify({ app: "请叫我学习", data }, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = "jinbu-progress-" + (state.today || "backup") + ".json";
@@ -1075,19 +1332,15 @@
       const w = data.word;
       const rec = data.progress;
       const kids = [
-        el("div", { class: "detail-word" }, w.word),
-        w.ipa ? el("div", { class: "ipa" }, w.ipa) : null,
+        el("div", { class: "detail-word" + (w.lang === "ko" ? " ko" : "") }, w.word),
+        readingBlock(w),
         el("div", { class: "meaning", style: { marginTop: "10px" } }, w.meaning),
-        (w.example || w.exampleZh)
-          ? el("div", { class: "example" }, [
-              w.example ? el("div", { class: "en-line" }, w.example) : null,
-              w.exampleZh ? el("div", { class: "zh-line" }, w.exampleZh) : null,
-            ])
-          : null,
+        exampleBlock(w),
         el("p", { class: "muted", style: { marginTop: "14px", fontSize: "13px" } },
           "状态：" + data.status +
-          (rec && rec.reps ? "  ·  已练习 " + rec.reps + " 次" : "  ·  还没有开始学习") +
-          (rec && rec.interval_days ? "  ·  当前间隔 " + rec.interval_days + " 天" : "")
+          "  ·  本轮 " + ((rec && rec.round_correct) || 0) + "/5" +
+          (rec && rec.reps ? "  ·  已过关 " + rec.reps + " 轮" : "  ·  还没有过关") +
+          (rec && rec.interval_days ? "  ·  下次间隔 " + rec.interval_days + " 天" : "  ·  过关后从明天开始复习")
         ),
       ];
       if (w.custom) {
@@ -1220,6 +1473,10 @@
         refreshState().then(() => render()).catch(() => {});
       }
     });
+    if (window.speechSynthesis && window.speechSynthesis.getVoices) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+    }
     if ("serviceWorker" in navigator && location.protocol !== "file:") {
       navigator.serviceWorker.register("./sw.js").catch(() => {});
     }

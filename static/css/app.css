@@ -1,4 +1,4 @@
-/* 进步 Progress · 个人英语学习 */
+/* 请叫我学习 */
 
 :root {
   --bg: #f3f0ea;
@@ -94,9 +94,9 @@ img { max-width: 100%; display: block; }
 }
 .wordmark .cn {
   font-family: var(--serif);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   color: var(--accent-ink);
 }
 .wordmark .en {
@@ -472,7 +472,7 @@ p { margin: 0; }
 .flash-wrap { perspective: 1200px; }
 .flashcard {
   position: relative;
-  min-height: 320px;
+  min-height: 460px;
   transform-style: preserve-3d;
   transition: transform 0.5s ease;
   cursor: pointer;
@@ -494,7 +494,7 @@ p { margin: 0; }
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
-.face.back { transform: rotateY(180deg); justify-content: flex-start; padding-top: 32px; }
+.face.back { transform: rotateY(180deg); justify-content: flex-start; padding-top: 36px; overflow: auto; }
 .kind-tag {
   position: absolute;
   top: 14px;
@@ -530,6 +530,96 @@ p { margin: 0; }
 }
 .example .en-line { color: var(--ink); }
 .example .zh-line { color: var(--ink-soft); margin-top: 4px; }
+.example .lab, .reading .lab {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.reading {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+.reading .phon {
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+.speak-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--accent-ink);
+  border-radius: 999px;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.speak-btn:hover { background: var(--accent-soft); border-color: transparent; }
+.round-badge {
+  margin-top: 12px;
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+.en-word.ko { font-family: var(--font); letter-spacing: 0; }
+.track-block { margin-top: 8px; }
+.track-block + .track-block { margin-top: 14px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.track-name { font-size: 14px; color: var(--accent-ink); margin: 0 0 4px; }
+.plan-line { font-size: 12px; color: var(--muted); margin: -4px 0 6px; }
+label.field select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-height: 44px;
+}
+.reward-pop {
+  position: relative;
+  margin-top: 14px;
+  text-align: center;
+  min-height: 52px;
+}
+.reward-badge {
+  display: inline-block;
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-weight: 750;
+  border-radius: 999px;
+  padding: 8px 16px;
+  animation: rewardPop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.spark {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 7px;
+  height: 7px;
+  margin: -3px 0 0 -3px;
+  border-radius: 99px;
+  background: #e2b657;
+  animation: spark 0.7s ease-out forwards;
+}
+@keyframes rewardPop {
+  0% { transform: scale(0.35); opacity: 0; }
+  70% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes spark {
+  to { transform: translate(var(--dx), var(--dy)) scale(0.3); opacity: 0; }
+}
 
 .rate-row {
   display: grid;
@@ -730,6 +820,7 @@ label.field input:focus, label.field textarea:focus {
   margin: 4px auto 12px;
 }
 .detail-word { font-family: var(--serif); font-size: 32px; }
+.detail-word.ko { font-family: var(--font); }
 .toast-wrap {
   position: fixed;
   left: 50%;
