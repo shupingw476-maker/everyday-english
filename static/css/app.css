@@ -588,6 +588,97 @@ p { margin: 0; }
   border-radius: 999px;
   padding: 4px 12px;
 }
+.practice-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  padding: 22px 22px 24px;
+  min-height: 460px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.practice-card .kind-tag { position: static; align-self: flex-start; margin-bottom: 4px; }
+.practice-card .round-badge { align-self: center; }
+.prompt-meaning {
+  margin-top: 18px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.spell-block { width: 100%; margin-top: 8px; }
+.spell-block .lab, .spell-correct .lab {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.spell-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+.spell-hint {
+  flex: none;
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 12px;
+  padding: 4px 12px;
+  line-height: 1.2;
+}
+.spell-input {
+  flex: 1 1 140px;
+  min-width: 120px;
+  max-width: 240px;
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0;
+  padding: 6px 4px;
+  text-align: left;
+}
+.spell-input:focus { outline: none; border-bottom-color: var(--accent-ink); }
+.spell-input::placeholder {
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+}
+.spell-block .hint { margin-top: 14px; }
+.spell-block .btn { margin-top: 16px; }
+.spell-result {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 750;
+}
+.spell-result.ok { color: var(--ok); }
+.spell-result.no { color: var(--brick); }
+.spell-yours { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.spell-correct { margin-top: 12px; }
+.spell-answer {
+  font-family: var(--serif);
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.spell-note { margin-top: 12px; color: var(--ok); font-size: 14px; }
 .en-word.ko { font-family: var(--font); letter-spacing: 0; }
 .track-block { margin-top: 8px; }
 .track-block + .track-block { margin-top: 14px; padding-top: 8px; border-top: 1px dashed var(--line); }

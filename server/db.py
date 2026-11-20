@@ -195,6 +195,10 @@ def _migrate(con: sqlite3.Connection) -> None:
             "INSERT INTO app_meta (key, value) VALUES (?, ?)",
             (_CURVE_KEY, "1,2,4,7,15,30"),
         )
+    # Words already recalled 3+ times, back when a round needed 5, now count as passed.
+    from .logic import apply_round_need_migration
+
+    apply_round_need_migration(con)
     con.commit()
 
 

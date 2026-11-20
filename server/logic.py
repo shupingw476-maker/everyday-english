@@ -12,14 +12,17 @@ from . import db, words as wordbank
 TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_PUNISHMENT = "昨天没打卡的人，要被催，并且下一天要多做一份惩罚任务"
 # Ebbinghaus-style curve in Asia/Shanghai calendar days.
-# A new word's five same-day recalls are the learning round; the first spaced
+# A new word's three same-day recalls are the learning round; the first spaced
 # review is the next day. After 30 days the interval stays at 30.
 REVIEW_CURVE = (1, 2, 4, 7, 15, 30)
-ROUND_NEED = 5
+ROUND_NEED = 3
+# One-time migration: rounds already at 3 or 4 under the old rule of 5 count as passed.
+ROUND_NEED_META = "round_need_v3"
 MEMORY_TEXT = (
-    "每个词要在本轮答对 5 次才算过关。不认识会把这 5 次清零，模糊会减掉 1 次，所以不能点一下就算学完。"
+    "每个词要在本轮答对 3 次才算过关。不认识会把这 3 次清零，模糊会减掉 1 次，所以不能点一下就算学完。"
     "过关之后按 1、2、4、7、15、30 天复习（北京时间的自然日）。复习没记住，间隔退回上一级，不会继续变长。"
     "打卡要先做完今天到期的复习，再完成当天的新词。"
+    "练英语时先看开头几个字母再拼写，拼对记为认识，同一次只记一遍。韩语不用英文字母拼写。"
 )
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 POINTS = {"again": 1, "hard": 3, "know": 8, "quiz_ok": 10, "quiz_miss": 0, "checkin": 30}
@@ -567,6 +570,99 @@ def build_session(member: dict, track: str | None = None) -> list[dict]:
     return items
 
 
+def completed_round_update(interval_days: int, today: str | None = None) -> dict:
+    """Schedule the next review after a round that has already reached the threshold."""
+    today = today or today_str()
+    interval = advance_interval(curve_interval(interval_days or 0))
+    return {
+        "interval_days": interval,
+        "due_ts": start_of_day_ts(add_days(today, interval)),
+        "status": "mastered" if interval >= 15 else "learning",
+        "round_correct": 0,
+    }
+
+
+def _credit_passed_today(con, member_id: int, word_id: str, was_new: bool, today: str) -> None:
+    """Count an already-passed word toward today's frozen quota so the day can still finish."""
+    row = con.execute(
+        "SELECT * FROM daily WHERE member_id=? AND date=?",
+        (member_id, today),
+    ).fetchone()
+    if row is None:
+        return
+    daily = {k: row[k] for k in row.keys()}
+    if daily.get("checkin"):
+        return
+    track = "korean" if str(word_id).startswith("ko_") else "cet4"
+    cols = _track_columns(track)
+    target_key = cols["new"] if was_new else cols["review"]
+    if daily.get(target_key) is None:
+        return
+    list_key = cols["new_json"] if was_new else cols["due_json"]
+    ids = _loads(daily.get(list_key), [])
+    all_ids = _loads(daily.get(cols["all_json"]), [])
+    changed = False
+    if word_id not in ids:
+        ids.append(word_id)
+        changed = True
+    if word_id not in all_ids:
+        all_ids.append(word_id)
+        changed = True
+    if not changed:
+        return
+    con.execute(
+        f"UPDATE daily SET {list_key}=?, {cols['all_json']}=? WHERE member_id=? AND date=?",
+        (json.dumps(ids), json.dumps(all_ids), member_id, today),
+    )
+
+
+def apply_round_need_migration(con) -> None:
+    """Pass words that already have 3 or 4 successful recalls from when the bar was 5.
+
+    Uses the same completion as a passing round: one interval step, reps + 1,
+    round progress cleared. 「不认识」and「模糊」are not loosened. Points already
+    earned for those recalls stay as they are.
+    """
+    done = con.execute("SELECT value FROM app_meta WHERE key=?", (ROUND_NEED_META,)).fetchone()
+    if done is not None:
+        return
+    today = today_str()
+    now_ms = int(now().timestamp() * 1000)
+    rows = con.execute(
+        "SELECT * FROM word_progress WHERE round_correct >= ?",
+        (ROUND_NEED,),
+    ).fetchall()
+    for row in rows:
+        rec = {k: row[k] for k in row.keys()}
+        reps = int(rec.get("reps") or 0)
+        was_new = reps <= 0
+        due_ts = int(rec.get("due_ts") or 0)
+        was_due = (not was_new) and due_ts > 0 and due_ts <= now_ms
+        settled = completed_round_update(rec.get("interval_days") or 0, today)
+        con.execute(
+            """UPDATE word_progress
+               SET interval_days=?, due_ts=?, reps=reps+1, status=?, round_correct=0,
+                   introduced_on=COALESCE(introduced_on, ?)
+               WHERE member_id=? AND word_id=? AND round_correct >= ?""",
+            (
+                settled["interval_days"],
+                settled["due_ts"],
+                settled["status"],
+                today,
+                rec["member_id"],
+                rec["word_id"],
+                ROUND_NEED,
+            ),
+        )
+        if was_new or was_due:
+            _credit_passed_today(con, rec["member_id"], rec["word_id"], was_new, today)
+    con.execute(
+        "INSERT OR IGNORE INTO app_meta (key, value) VALUES (?, ?)",
+        (ROUND_NEED_META, str(ROUND_NEED)),
+    )
+    con.commit()
+
+
 def curve_interval(days: int) -> int:
     """Snap a stored interval onto the review curve without moving it forward."""
     days = int(days or 0)
@@ -711,6 +807,10 @@ def rate_word(member: dict, word_id: str, rating: str) -> dict:
     round_correct = int(rec.get("round_correct") or 0)
     on_curve = (rec.get("reps") or 0) > 0
     complete = False
+    # Already at the pass line (including 3 or 4 left over from when the line was 5).
+    # Do not let 「不认识」or「模糊」erase a round that has already been earned.
+    if round_correct >= ROUND_NEED:
+        rating = "know"
     if rating == "again":
         round_correct = 0
         lapses += 1
@@ -1365,22 +1465,35 @@ def import_member(member: dict, payload: dict) -> dict:
     db.execute("DELETE FROM word_progress WHERE member_id=?", (mid,))
     db.execute("DELETE FROM custom_words WHERE member_id=?", (mid,))
     db.execute("DELETE FROM daily WHERE member_id=?", (mid,))
+    today = today_str()
     for rec in data.get("progress") or []:
+        interval = curve_interval(rec.get("interval_days") or 0)
+        due_ts = rec.get("due_ts") or 0
+        reps = int(rec.get("reps") or 0)
+        status = rec.get("status") or "learning"
+        round_correct = int(rec.get("round_correct") or 0)
+        if round_correct >= ROUND_NEED:
+            settled = completed_round_update(interval, today)
+            interval = settled["interval_days"]
+            due_ts = settled["due_ts"]
+            status = settled["status"]
+            round_correct = 0
+            reps += 1
         db.execute(
             """INSERT INTO word_progress (member_id, word_id, interval_days, due_ts, reps, lapses, status, last_rating, last_reviewed, introduced_on, round_correct)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 mid,
                 rec["word_id"],
-                curve_interval(rec.get("interval_days") or 0),
-                rec.get("due_ts") or 0,
-                rec.get("reps") or 0,
+                interval,
+                due_ts,
+                reps,
                 rec.get("lapses") or 0,
-                rec.get("status") or "learning",
+                status,
                 rec.get("last_rating"),
                 rec.get("last_reviewed"),
                 rec.get("introduced_on"),
-                int(rec.get("round_correct") or 0),
+                round_correct,
             ),
         )
     for rec in data.get("customWords") or []:
