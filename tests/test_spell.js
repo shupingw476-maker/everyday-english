@@ -15,37 +15,60 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-assert(spell.hintText("appect") === "app", "appect hint");
-assert(spell.hintText("accept") === "acc", "accept hint");
-assert(spell.hintText("appear") === "app", "appear hint");
-assert(spell.hintLength("more") === 3, "more length");
-assert(spell.hintText("one") === "o", "one hint");
-assert(spell.hintText("cat") === "c", "cat hint");
-assert(spell.hintText("be") === "b", "be hint");
-assert(spell.hintText("a") === "a", "a hint");
-assert(spell.hintText("  go ") === "g", "trimmed short hint");
+function patterns(word) {
+  const chars = [...word.trim()];
+  return spell.masksFor(chars).map((_, i) => spell.hintFor(word, i).pattern);
+}
 
-assert(spell.isCorrect("appear", "ear"), "rest of appear");
-assert(spell.isCorrect("appear", "appear"), "full appear");
-assert(spell.isCorrect("appear", " Appear "), "case and trim");
-assert(spell.isCorrect("appear", "app ear"), "accidental spaces");
-assert(spell.isCorrect("APPEAR", "ear"), "uppercase target");
-assert(!spell.isCorrect("appear", "app"), "hint alone is not enough");
-assert(!spell.isCorrect("appear", ""), "empty");
-assert(!spell.isCorrect("appear", "   "), "spaces only");
-assert(!spell.isCorrect("appear", "apple"), "wrong word");
+function hiddenCount(pattern) {
+  return [...pattern].filter((ch) => ch === spell.DASH).length;
+}
 
-assert(spell.isCorrect("cat", "at"), "short rest");
-assert(spell.isCorrect("cat", "cat"), "short full");
-assert(spell.isCorrect("cat", "C AT"), "short spaces");
-assert(!spell.isCorrect("cat", "c"), "short hint alone");
-assert(spell.isCorrect("be", "e"), "two-letter rest");
-assert(spell.isCorrect("be", "be"), "two-letter full");
-assert(spell.isCorrect("a", "a"), "one letter is the whole word");
-assert(!spell.isCorrect("a", ""), "one letter still needs typing");
+for (const word of ["more", "accept", "appear", "one", "cat", "be"]) {
+  const all = patterns(word);
+  assert(all.length > 1 || word.length <= 1, word + " should vary when long enough: " + all.join(" | "));
+  const unique = new Set(all);
+  if (word.length > 3) assert(unique.size > 1, word + " hints collapsed: " + all.join(" | "));
+  for (const pattern of all) {
+    assert(pattern.length === [...word].length, word + " pattern length " + pattern);
+    assert(!pattern.includes(word), word + " pattern revealed the word: " + pattern);
+    assert(hiddenCount(pattern) >= 1, word + " hid nothing: " + pattern);
+    const hint = spell.hintFor(word, all.indexOf(pattern));
+    assert(spell.isCorrect(word, word, hint.missing), "full " + word);
+    assert(spell.isCorrect(word, "  " + word.toUpperCase() + "  ", hint.missing), "case and trim " + word);
+    assert(spell.isCorrect(word, word.split("").join(" "), hint.missing), "spaces " + word);
+    if (hint.missing) assert(spell.isCorrect(word, hint.missing, hint.missing), "missing letters " + pattern);
+    assert(!spell.isCorrect(word, "", hint.missing), "empty");
+    assert(!spell.isCorrect(word, "zzz", hint.missing), "wrong " + word);
+  }
+}
 
-assert(spell.isCorrect("well-known", "l-known"), "hyphen rest");
-assert(spell.isCorrect("well-known", "Well-Known"), "hyphen full");
-assert(!spell.isCorrect("well-known", "wel"), "hyphen hint alone");
+const more = patterns("more");
+assert(more.some((p) => p.includes(spell.DASH) && p !== "mor—"), "more is not only a prefix: " + more.join(" | "));
+assert(more.includes("m—r—"), "more cloze m—r— missing from " + more.join(" | "));
+
+const accept = patterns("accept");
+assert(accept.some((p) => p.startsWith("acc")), "accept prefix: " + accept.join(" | "));
+assert(accept.includes("a—c—pt"), "accept cloze: " + accept.join(" | "));
+
+const appear = patterns("appear");
+assert(appear.includes("—ppe—r"), "appear cloze: " + appear.join(" | "));
+
+const five = patterns("apple");
+assert(five.includes("a—p——"), "five-letter cloze: " + five.join(" | "));
+
+for (const word of ["one", "cat", "be"]) {
+  for (const pattern of patterns(word)) {
+    const shown = [...pattern].filter((ch) => ch !== spell.DASH).length;
+    assert(shown === 1, word + " should reveal one letter, got " + pattern);
+  }
+}
+
+const single = spell.hintFor("a", 0);
+assert(single.pattern === "—", "one letter stays hidden");
+assert(spell.isCorrect("a", "A", single.missing), "type the single letter");
 
 console.log("spell checks ok");
+console.log("more", more.join(" "));
+console.log("accept", accept.join(" "));
+console.log("appear", appear.join(" "));

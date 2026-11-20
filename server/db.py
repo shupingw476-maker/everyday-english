@@ -44,7 +44,11 @@ CREATE TABLE IF NOT EXISTS members (
   miss_processed_on TEXT,
   joined_date TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  study_plan TEXT NOT NULL DEFAULT 'cet4'
+  study_plan TEXT NOT NULL DEFAULT 'cet4',
+  carry_new INTEGER NOT NULL DEFAULT 0,
+  carry_review INTEGER NOT NULL DEFAULT 0,
+  ko_carry_new INTEGER NOT NULL DEFAULT 0,
+  ko_carry_review INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS daily (
@@ -152,6 +156,10 @@ def _migrate(con: sqlite3.Connection) -> None:
     _add_col(con, "daily", "ko_vocab_done", "INTEGER NOT NULL DEFAULT 0")
     _add_col(con, "daily", "ko_quizzes_done", "INTEGER NOT NULL DEFAULT 0")
     _add_col(con, "word_progress", "round_correct", "INTEGER NOT NULL DEFAULT 0")
+    _add_col(con, "members", "carry_new", "INTEGER NOT NULL DEFAULT 0")
+    _add_col(con, "members", "carry_review", "INTEGER NOT NULL DEFAULT 0")
+    _add_col(con, "members", "ko_carry_new", "INTEGER NOT NULL DEFAULT 0")
+    _add_col(con, "members", "ko_carry_review", "INTEGER NOT NULL DEFAULT 0")
     con.execute(
         "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
     )

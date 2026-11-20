@@ -544,6 +544,10 @@
       el("div", { class: "nm" }, p.name),
       p.studyPlanLabel ? el("div", { class: "plan-line" }, p.studyPlanLabel) : null,
       el("div", { class: "row" }, [el("span", {}, "连续"), el("span", {}, p.streak + " 天")]),
+      ...((p.tracks || []).map((track) => el("div", { class: "row" }, [
+        el("span", {}, track.label),
+        el("span", {}, track.done ? "今天完成" : "还没完成"),
+      ]))),
       el("div", { class: "row" }, [el("span", {}, "积分"), el("span", {}, p.points + " · Lv." + p.level)]),
       p.checkinToday
         ? el("span", { class: "stamp yes" }, "今日已打卡")
@@ -592,6 +596,9 @@
       : (track.quizComplete ? "今天已完成" : "1 组（" + track.quizSize + " 题）");
     return el("div", { class: "track-block" }, [
       el("h3", { class: "track-name" }, title),
+      (track.carryNew || track.carryReview)
+        ? el("p", { class: "tiny muted" }, "含积压：复习 " + (track.carryReview || 0) + "，新词 " + (track.carryNew || 0) + "（最多两天）")
+        : null,
       taskRow(title + "复习", track.dueDone, track.dueTotal, track.dueTotal === 0 ? "今日无需复习" : null),
       taskRow(title + "新词", track.newDone, track.newTotal, track.newTotal === 0 ? "暂无新词" : null),
       taskRow(quizName, track.quizDone, track.quizTarget, quizHint),
@@ -934,7 +941,7 @@
       card.append(
         el("div", { class: "prompt-meaning" }, w.meaning || "（这个词还没有中文意思）"),
         listenOnly(w),
-        spellEntry(w)
+        spellEntry(item)
       );
     } else {
       card.append(el("div", { class: "spell-result " + (ok ? "ok" : "no"), role: "status" }, ok ? "拼对了" : "还没拼对"));
@@ -987,23 +994,41 @@
     ]);
   }
 
-  function spellEntry(w) {
-    const hint = (window.JinbuSpell && window.JinbuSpell.hintText(w.word)) || "";
-    const short = hint.length <= 1;
+  function spellHintFor(item) {
+    const word = item && item.word;
+    const spell = window.JinbuSpell;
+    if (!word || !spell) return { pattern: "", missing: "" };
+    const key = word.id + ":" + (item.roundCorrect || 0);
+    session.hintByCard = session.hintByCard || {};
+    if (!session.hintByCard[key]) {
+      if (!session.hintSalt) session.hintSalt = Math.floor(Math.random() * 997) + 1;
+      let salt = session.hintSalt + (item.roundCorrect || 0) * 17;
+      const id = String(word.id || "");
+      for (let i = 0; i < id.length; i++) salt = (salt * 33 + id.charCodeAt(i)) >>> 0;
+      session.hintByCard[key] = spell.hintFor(word.word, salt);
+    }
+    return session.hintByCard[key];
+  }
+
+  function spellEntry(item) {
+    const hint = spellHintFor(item);
+    const pattern = hint.pattern || "";
+    const shown = pattern.split("").filter((ch) => ch !== (window.JinbuSpell && window.JinbuSpell.DASH)).length;
+    const short = [...String(item.word.word || "").trim()].length <= 3;
     return el("div", { class: "spell-block" }, [
       el("span", { class: "lab" }, "拼写"),
       el("div", { class: "spell-row" }, [
-        el("span", { class: "spell-hint", "data-spell-hint": hint }, hint),
+        el("span", { class: "spell-hint", "data-spell-hint": pattern }, pattern),
         el("input", {
           class: "spell-input",
           type: "text",
-          inputmode: "latin",
+          inputmode: "text",
           autocomplete: "off",
           autocorrect: "off",
           autocapitalize: "none",
           spellcheck: "false",
           "aria-label": "拼写这个单词",
-          placeholder: "接着写，或写全词",
+          placeholder: "补出空着的，或写全词",
           value: session.spellDraft || "",
           onInput: (e) => { session.spellDraft = e.target.value; },
           onKeydown: (e) => {
@@ -1015,7 +1040,9 @@
           },
         }),
       ]),
-      el("p", { class: "hint" }, short ? "这个词比较短，只提示第一个字母。" : "开头已经给出。可以接着写，也可以输入整个单词。"),
+      el("p", { class: "hint" }, short
+        ? "这个词比较短，只露出 " + shown + " 个字母。横线要自己补，也可以写整个单词。"
+        : "横线是没给出的字母。可以只补这些空，也可以写整个单词。"),
       el("button", {
         class: "btn btn-primary",
         type: "button",
@@ -1055,7 +1082,8 @@
       toast("先写下这个单词的拼写");
       return;
     }
-    const correct = spell.isCorrect(item.word.word, draft);
+    const hint = spellHintFor(item);
+    const correct = spell.isCorrect(item.word.word, draft, hint.missing);
     if (!correct) {
       session.spellLock = true;
       session.spell = { wordId: item.word.id, draft: draft, result: "miss", recorded: false };
@@ -1282,17 +1310,22 @@
         type: "button",
         class: "choice" + (stateCls ? " " + stateCls : ""),
         disabled: quizRun.locked ? true : null,
-        onClick: () => pickChoice(i),
+        onClick: (e) => {
+          e.stopPropagation();
+          pickChoice(i);
+        },
       }, text);
       const spoken = choiceSpeakAt(q, i);
-      if (spoken) {
-        choices.append(el("div", { class: "choice-wrap" + (stateCls ? " " + stateCls : "") }, [
-          btn,
-          choicePronounce(spoken),
-        ]));
-      } else {
-        choices.append(btn);
-      }
+      const row = el("div", {
+        class: "choice-row" + (spoken ? " has-speak" : "") + (stateCls ? " " + stateCls : ""),
+        "data-choice": String(i),
+        onClick: (e) => {
+          if (e.target.closest && e.target.closest(".speak-btn")) return;
+          pickChoice(i);
+        },
+      }, [btn]);
+      if (spoken) row.append(choicePronounce(spoken));
+      choices.append(row);
     });
     wrap.append(choices);
     if (quizRun.locked) {
@@ -1460,7 +1493,7 @@
         el("h2", {}, "每天的学习量"),
         fieldNum("每日新词数量（四级英语）", "dailyNew", me.settings.dailyNew, 5, 40),
         fieldNum("每日复习上限（四级英语）", "reviewCap", me.settings.reviewCap, 5, 80),
-        el("p", { class: "tiny muted" }, "复习排在新词前面，都要做完才能打卡。每个词要在本轮答对 3 次才过关。英语若昨天没打卡，第二天会多 20 个新词、多一组题。韩语每天 8 个新词、复习最多 24 个，小测每组 6 题；没打卡时韩语再加 8 个新词和一组小测。"),
+        el("p", { class: "tiny muted" }, "复习排在新词前面，都要做完才能打卡。每个词要在本轮答对 3 次才过关。若某天没打卡，没做完的复习和新词会积到后面，英语和韩语、两个人都分开算，积压最多两天的平时定额，并多做一组题。连续天数会清零。韩语每天 8 个新词、复习最多 24 个，小测每组 6 题。"),
       ]),
       el("div", { class: "card" }, [
         el("h2", {}, "打卡提醒"),
