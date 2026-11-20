@@ -12,26 +12,30 @@ from . import db, words as wordbank
 TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_PUNISHMENT = "昨天没打卡的人，要被催，并且下一天要多做一份惩罚任务"
 # Ebbinghaus-style curve in Asia/Shanghai calendar days.
-# A new word's five same-day recalls are the learning round; the first spaced
+# A new word's three same-day recalls are the learning round; the first spaced
 # review is the next day. After 30 days the interval stays at 30.
 REVIEW_CURVE = (1, 2, 4, 7, 15, 30)
-ROUND_NEED = 5
+ROUND_NEED = 3
+# One-time migration: rounds already at 3 or 4 under the old rule of 5 count as passed.
+ROUND_NEED_META = "round_need_v3"
 MEMORY_TEXT = (
-    "每个词要在本轮答对 5 次才算过关。不认识会把这 5 次清零，模糊会减掉 1 次，所以不能点一下就算学完。"
+    "每个词要在本轮答对 3 次才算过关。不认识会把这 3 次清零，模糊会减掉 1 次，所以不能点一下就算学完。"
     "过关之后按 1、2、4、7、15、30 天复习（北京时间的自然日）。复习没记住，间隔退回上一级，不会继续变长。"
     "打卡要先做完今天到期的复习，再完成当天的新词。"
+    "练英语时先看开头几个字母再拼写，拼对记为认识，同一次只记一遍。韩语不用英文字母拼写。"
 )
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 POINTS = {"again": 1, "hard": 3, "know": 8, "quiz_ok": 10, "quiz_miss": 0, "checkin": 30}
 QUIZ_CORRECT_BONUS = 5
 STREAK_BONUS = {3: 15, 7: 30, 14: 50}
-PUNISH_EXTRA_NEW = 20
 PUNISH_EXTRA_QUIZ = 1
 KO_DAILY_NEW = 8
 KO_REVIEW_CAP = 24
 KO_QUIZ_SIZE = 6
-KO_PUNISH_EXTRA_NEW = 8
 KO_PUNISH_EXTRA_QUIZ = 1
+# Missed reviews and new words stack onto later days, separately for each
+# person and each language. The carried pile stops at two normal days.
+CARRY_DAYS = 2
 QUIZ_CORRECT_POINTS = POINTS["quiz_ok"] + QUIZ_CORRECT_BONUS
 
 
@@ -220,8 +224,84 @@ def status_of(rec: dict | None) -> str:
     return "学习中"
 
 
+def _quota(member: dict, track: str) -> tuple[int, int]:
+    """Normal new-word quota and review cap for one person's language."""
+    if track == "korean":
+        return KO_DAILY_NEW, KO_REVIEW_CAP
+    return max(1, int(member.get("daily_new") or 20)), max(5, int(member.get("review_cap") or 40))
+
+
+def _carry_columns(track: str) -> tuple[str, str]:
+    if track == "korean":
+        return "ko_carry_new", "ko_carry_review"
+    return "carry_new", "carry_review"
+
+
+def _carry_pair(member: dict, track: str) -> tuple[int, int]:
+    new_col, review_col = _carry_columns(track)
+    normal_new, review_cap = _quota(member, track)
+    new_n = min(normal_new * CARRY_DAYS, max(0, int(member.get(new_col) or 0)))
+    review_n = min(review_cap * CARRY_DAYS, max(0, int(member.get(review_col) or 0)))
+    return new_n, review_n
+
+
+def _clear_carry(member_id: int) -> None:
+    db.execute(
+        """UPDATE members
+           SET carry_new=0, carry_review=0, ko_carry_new=0, ko_carry_review=0
+           WHERE id=?""",
+        (member_id,),
+        commit=True,
+    )
+
+
+def _leftover_quota(member: dict, track: str, daily: dict | None) -> tuple[int, int]:
+    """Unfinished new words and reviews from one missed day, capped at two days."""
+    normal_new, review_cap = _quota(member, track)
+    cap_new = normal_new * CARRY_DAYS
+    cap_review = review_cap * CARRY_DAYS
+    cols = _track_columns(track)
+    if daily is None or daily.get(cols["new"]) is None or daily.get(cols["review"]) is None:
+        return min(cap_new, normal_new), min(cap_review, review_cap)
+    left_new = max(0, int(daily.get(cols["new"]) or 0) - len(_loads(daily.get(cols["new_json"]), [])))
+    left_review = max(0, int(daily.get(cols["review"]) or 0) - len(_loads(daily.get(cols["due_json"]), [])))
+    return min(cap_new, left_new), min(cap_review, left_review)
+
+
+def _store_carry_from_yesterday(member: dict, yesterday: str) -> None:
+    """Replace this person's backlog with what yesterday left unfinished."""
+    daily = db.fetchone(
+        "SELECT * FROM daily WHERE member_id=? AND date=?",
+        (member["id"], yesterday),
+    )
+    values = {
+        "carry_new": 0,
+        "carry_review": 0,
+        "ko_carry_new": 0,
+        "ko_carry_review": 0,
+    }
+    for track in active_tracks(member):
+        left_new, left_review = _leftover_quota(member, track, daily)
+        new_col, review_col = _carry_columns(track)
+        values[new_col] = left_new
+        values[review_col] = left_review
+    db.execute(
+        """UPDATE members
+           SET carry_new=?, carry_review=?, ko_carry_new=?, ko_carry_review=?
+           WHERE id=?""",
+        (
+            values["carry_new"],
+            values["carry_review"],
+            values["ko_carry_new"],
+            values["ko_carry_review"],
+            member["id"],
+        ),
+        commit=True,
+    )
+
+
 def process_misses(room_id: int) -> None:
-    """After 00:00, mark members who missed yesterday and assign punishment."""
+    """After 00:00, mark members who missed yesterday and stack their leftover work."""
     today = today_str()
     yesterday = add_days(today, -1)
     for m in room_members(room_id):
@@ -252,6 +332,7 @@ def process_misses(room_id: int) -> None:
         # Missed yesterday (and has not checked in today).
         if m["miss_processed_on"] == today:
             continue
+        _store_carry_from_yesterday(m, yesterday)
         db.execute(
             """UPDATE members
                SET streak=0, punishment_pending=1, missed_yesterday=1, miss_processed_on=?
@@ -294,7 +375,8 @@ def ensure_daily(member: dict) -> dict:
         # Miss processing happened after the daily row was created (e.g. right after midnight).
         db.execute(
             """UPDATE daily
-               SET punishment=1, quiz_target=?, ko_quiz_target=?, new_target=NULL, ko_new_target=NULL
+               SET punishment=1, quiz_target=?, ko_quiz_target=?,
+                   review_target=NULL, new_target=NULL, ko_review_target=NULL, ko_new_target=NULL
                WHERE member_id=? AND date=?""",
             (en_quiz, ko_quiz, member["id"], today),
             commit=True,
@@ -312,6 +394,10 @@ def ensure_daily(member: dict) -> dict:
             if (row.get("ko_quiz_target") or 0) == 0:
                 updates.append("ko_quiz_target=?")
                 params.append(ko_quiz)
+        if "cet4" in tracks and not row["checkin"] and not (row.get("quizzes_done") or 0):
+            if (row.get("quiz_target") or 0) == 0:
+                updates.append("quiz_target=?")
+                params.append(en_quiz)
         if "cet4" not in tracks and not row["checkin"] and not (row.get("quizzes_done") or 0):
             if (row.get("quiz_target") or 0) != 0:
                 updates.append("quiz_target=?")
@@ -346,34 +432,58 @@ def due_and_new(member: dict, track: str = "cet4", now_ms: int | None = None):
     return due, fresh, progress
 
 
+def _words_started(daily: dict, track: str) -> bool:
+    """True once today's word quota has actually been touched. A finished quiz does not count."""
+    cols = _track_columns(track)
+    if _loads(daily.get(cols["all_json"]), []):
+        return True
+    if daily.get(cols["vocab"]):
+        return True
+    return False
+
+
 def _freeze_pair(member: dict, daily: dict, track: str) -> tuple[int, int]:
-    punish = 1 if daily["punishment"] else 0
     if track not in active_tracks(member):
         return 0, 0
     due, fresh, _ = due_and_new(member, track)
-    if track == "korean":
-        review_target = min(len(due), KO_REVIEW_CAP)
-        new_goal = KO_DAILY_NEW + (KO_PUNISH_EXTRA_NEW if punish else 0)
-    else:
-        cap = max(5, int(member["review_cap"] or 40))
-        daily_new = max(1, int(member["daily_new"] or 20))
-        review_target = min(len(due), cap)
-        new_goal = daily_new + (PUNISH_EXTRA_NEW if punish else 0)
+    normal_new, review_cap = _quota(member, track)
+    carry_new, carry_review = _carry_pair(member, track)
+    review_target = min(len(due), review_cap + carry_review)
+    new_goal = normal_new + carry_new
     return review_target, min(len(fresh), new_goal)
 
 
+def _stale_zero_target(member: dict, daily: dict, track: str) -> bool:
+    """A 0/0 quota with work still in the bank was frozen while this language was off."""
+    if track not in active_tracks(member) or _words_started(daily, track):
+        return False
+    cols = _track_columns(track)
+    if (daily.get(cols["review"]) or 0) != 0 or (daily.get(cols["new"]) or 0) != 0:
+        return False
+    if daily.get(cols["review"]) is None or daily.get(cols["new"]) is None:
+        return False
+    due, fresh, _ = due_and_new(member, track)
+    return bool(due or fresh)
+
+
 def freeze_targets(member: dict, daily: dict) -> dict:
-    """Freeze today's review/new targets the first time each track is computed."""
+    """Freeze today's review/new targets the first time each active language is computed."""
     sets = []
     params: list = []
-    if daily["review_target"] is None or daily["new_target"] is None:
-        review_target, new_target = _freeze_pair(member, daily, "cet4")
-        sets.extend(["review_target=?", "new_target=?"])
+    for track, review_col, new_col in (
+        ("cet4", "review_target", "new_target"),
+        ("korean", "ko_review_target", "ko_new_target"),
+    ):
+        if track not in active_tracks(member):
+            continue
+        missing = daily.get(review_col) is None or daily.get(new_col) is None
+        if not missing and not _stale_zero_target(member, daily, track):
+            continue
+        review_target, new_target = _freeze_pair(member, daily, track)
+        sets.extend([f"{review_col}=?", f"{new_col}=?"])
         params.extend([review_target, new_target])
-    if daily.get("ko_review_target") is None or daily.get("ko_new_target") is None:
-        review_target, new_target = _freeze_pair(member, daily, "korean")
-        sets.extend(["ko_review_target=?", "ko_new_target=?"])
-        params.extend([review_target, new_target])
+        daily[review_col] = review_target
+        daily[new_col] = new_target
     if not sets:
         return daily
     params.extend([member["id"], daily["date"]])
@@ -434,10 +544,13 @@ def _track_status(member: dict, daily: dict, track: str) -> dict:
     remaining_new = fresh[:new_left]
     vocab_done = bool(daily[cols["vocab"]] or (due_left == 0 and new_left == 0))
     if review_target == 0 and new_target == 0:
-        vocab_done = True
+        # An empty quota is finished only when this language really has nothing left.
+        # A zero frozen while the language was off must not mark it checked in.
+        vocab_done = not remaining_due and not remaining_new and not due and not fresh
     quizzes_done = daily[cols["quizzes"]] or 0
     quiz_target = daily[cols["quiz_target"]] or 0
-    quiz_done = quizzes_done >= quiz_target if quiz_target else True
+    quiz_done = quizzes_done >= quiz_target if quiz_target else False
+    carry_new, carry_review = _carry_pair(member, track)
     return {
         "id": cols["id"],
         "label": cols["label"],
@@ -447,6 +560,8 @@ def _track_status(member: dict, daily: dict, track: str) -> dict:
         "newTotal": new_target,
         "newDone": new_done,
         "newLeft": new_left,
+        "carryNew": carry_new,
+        "carryReview": carry_review,
         "quizDone": quizzes_done,
         "quizTarget": quiz_target,
         "quizSize": cols["quiz_size"],
@@ -459,38 +574,44 @@ def _track_status(member: dict, daily: dict, track: str) -> dict:
 
 
 def punishment_text_for(member: dict) -> str:
-    tracks = active_tracks(member)
-    if tracks == ["cet4"]:
-        return "今天需要先完成惩罚任务（额外 20 个单词 + 多做一组题），再加上平时的任务，才能打卡。"
     parts = []
-    if "cet4" in tracks:
-        parts.append(f"英语额外 {PUNISH_EXTRA_NEW} 个新词，并多做一组题")
-    if "korean" in tracks:
-        parts.append(f"韩语额外 {KO_PUNISH_EXTRA_NEW} 个新词，并多做一组小测")
-    return "今天需要先完成惩罚任务（" + "；".join(parts) + "），再加上平时的任务，才能打卡。"
+    for track in active_tracks(member):
+        carry_new, carry_review = _carry_pair(member, track)
+        label = "韩语" if track == "korean" else "英语"
+        quiz = "小测" if track == "korean" else "题"
+        parts.append(f"{label}积压复习 {carry_review} 个、新词 {carry_new} 个，并多做一组{quiz}")
+    detail = "；".join(parts) if parts else "多做一组题"
+    return (
+        "昨天没打卡，连续学习已清零。没做完的复习和新词已经积到今天（最多两天的量）："
+        + detail
+        + "。只算你自己的、并且英语和韩语分开，不会记到同伴身上。"
+    )
 
 
 def requirement_text(tracks: list[dict], punishment: bool) -> str:
     bits = []
+    carry_bits = []
     for track in tracks:
-        if track["id"] == "korean":
-            bits.append(
-                f"韩语：复习 {track['dueDone']}/{track['dueTotal']}，新词 {track['newDone']}/{track['newTotal']}，"
-                f"小测 {track['quizDone']}/{track['quizTarget']} 组（每组 {track['quizSize']} 题）"
+        name = "韩语" if track["id"] == "korean" else "四级英语"
+        quiz_name = "小测" if track["id"] == "korean" else "做题"
+        bits.append(
+            f"{name}：复习 {track['dueDone']}/{track['dueTotal']}，新词 {track['newDone']}/{track['newTotal']}，"
+            f"{quiz_name} {track['quizDone']}/{track['quizTarget']} 组（每组 {track['quizSize']} 题）"
+        )
+        if track.get("carryNew") or track.get("carryReview"):
+            carry_bits.append(
+                f"{name}积压复习 {track.get('carryReview') or 0}、新词 {track.get('carryNew') or 0}"
             )
-        else:
-            bits.append(
-                f"四级英语：复习 {track['dueDone']}/{track['dueTotal']}，新词 {track['newDone']}/{track['newTotal']}，"
-                f"做题 {track['quizDone']}/{track['quizTarget']} 组（每组 {track['quizSize']} 题）"
-            )
-    head = "昨天没打卡，今天的新词和题组里已经包含惩罚任务。" if punishment else ""
+    head = "昨天没打卡，没做完的复习和新词已积到今天，并多做一组题。" if punishment else ""
+    carry = ("其中" + "；".join(carry_bits) + "。") if carry_bits else ""
     if len(tracks) > 1:
-        tail = "上面每一门都做完，今天才算打卡。韩语只计入韩语进度，不会算进英语任务。"
+        tail = "上面每一门都做完，今天才算打卡。韩语只计入韩语，英语只计入英语，也不会算进同伴的进度。"
     elif tracks and tracks[0]["id"] == "korean":
-        tail = "韩语的复习、新词和小测都做完，才算打卡。"
+        tail = "韩语的复习、新词和小测都做完，才算你自己的打卡，不会替同伴打卡。"
     else:
-        tail = "英语的复习、新词和做题都完成，才算打卡。"
-    return head + "打卡要求：" + "；".join(bits) + "。" + tail
+        tail = "英语的复习、新词和做题都完成，才算你自己的打卡，不会替同伴打卡。"
+    rule = f"若某天没打卡，没做完的复习和新词会积到后面，每人、每门分开算，积压最多 {CARRY_DAYS} 天的平时定额。连续天数仍会清零。"
+    return head + carry + "打卡要求：" + "；".join(bits) + "。" + tail + rule
 
 
 def plan_for(member: dict) -> dict:
@@ -565,6 +686,99 @@ def build_session(member: dict, track: str | None = None) -> list[dict]:
     for w in chosen["remainingNew"]:
         items.append(pack(w, "new", punishment=bool(plan["punishment"])))
     return items
+
+
+def completed_round_update(interval_days: int, today: str | None = None) -> dict:
+    """Schedule the next review after a round that has already reached the threshold."""
+    today = today or today_str()
+    interval = advance_interval(curve_interval(interval_days or 0))
+    return {
+        "interval_days": interval,
+        "due_ts": start_of_day_ts(add_days(today, interval)),
+        "status": "mastered" if interval >= 15 else "learning",
+        "round_correct": 0,
+    }
+
+
+def _credit_passed_today(con, member_id: int, word_id: str, was_new: bool, today: str) -> None:
+    """Count an already-passed word toward today's frozen quota so the day can still finish."""
+    row = con.execute(
+        "SELECT * FROM daily WHERE member_id=? AND date=?",
+        (member_id, today),
+    ).fetchone()
+    if row is None:
+        return
+    daily = {k: row[k] for k in row.keys()}
+    if daily.get("checkin"):
+        return
+    track = "korean" if str(word_id).startswith("ko_") else "cet4"
+    cols = _track_columns(track)
+    target_key = cols["new"] if was_new else cols["review"]
+    if daily.get(target_key) is None:
+        return
+    list_key = cols["new_json"] if was_new else cols["due_json"]
+    ids = _loads(daily.get(list_key), [])
+    all_ids = _loads(daily.get(cols["all_json"]), [])
+    changed = False
+    if word_id not in ids:
+        ids.append(word_id)
+        changed = True
+    if word_id not in all_ids:
+        all_ids.append(word_id)
+        changed = True
+    if not changed:
+        return
+    con.execute(
+        f"UPDATE daily SET {list_key}=?, {cols['all_json']}=? WHERE member_id=? AND date=?",
+        (json.dumps(ids), json.dumps(all_ids), member_id, today),
+    )
+
+
+def apply_round_need_migration(con) -> None:
+    """Pass words that already have 3 or 4 successful recalls from when the bar was 5.
+
+    Uses the same completion as a passing round: one interval step, reps + 1,
+    round progress cleared. 「不认识」and「模糊」are not loosened. Points already
+    earned for those recalls stay as they are.
+    """
+    done = con.execute("SELECT value FROM app_meta WHERE key=?", (ROUND_NEED_META,)).fetchone()
+    if done is not None:
+        return
+    today = today_str()
+    now_ms = int(now().timestamp() * 1000)
+    rows = con.execute(
+        "SELECT * FROM word_progress WHERE round_correct >= ?",
+        (ROUND_NEED,),
+    ).fetchall()
+    for row in rows:
+        rec = {k: row[k] for k in row.keys()}
+        reps = int(rec.get("reps") or 0)
+        was_new = reps <= 0
+        due_ts = int(rec.get("due_ts") or 0)
+        was_due = (not was_new) and due_ts > 0 and due_ts <= now_ms
+        settled = completed_round_update(rec.get("interval_days") or 0, today)
+        con.execute(
+            """UPDATE word_progress
+               SET interval_days=?, due_ts=?, reps=reps+1, status=?, round_correct=0,
+                   introduced_on=COALESCE(introduced_on, ?)
+               WHERE member_id=? AND word_id=? AND round_correct >= ?""",
+            (
+                settled["interval_days"],
+                settled["due_ts"],
+                settled["status"],
+                today,
+                rec["member_id"],
+                rec["word_id"],
+                ROUND_NEED,
+            ),
+        )
+        if was_new or was_due:
+            _credit_passed_today(con, rec["member_id"], rec["word_id"], was_new, today)
+    con.execute(
+        "INSERT OR IGNORE INTO app_meta (key, value) VALUES (?, ?)",
+        (ROUND_NEED_META, str(ROUND_NEED)),
+    )
+    con.commit()
 
 
 def curve_interval(days: int) -> int:
@@ -662,11 +876,20 @@ def try_checkin(member: dict) -> dict:
     member["missed_yesterday"] = 0
     member["punishment_pending"] = 0
     add_points(member, daily, POINTS["checkin"])
+    done_flags = ["checkin=1"]
+    for track in plan["tracks"]:
+        if track.get("vocabDone"):
+            done_flags.append(f"{_track_columns(track['id'])['vocab']}=1")
     db.execute(
-        "UPDATE daily SET checkin=1, vocab_done=1 WHERE member_id=? AND date=?",
+        f"UPDATE daily SET {', '.join(done_flags)} WHERE member_id=? AND date=?",
         (member["id"], today),
         commit=True,
     )
+    _clear_carry(member["id"])
+    member["carry_new"] = 0
+    member["carry_review"] = 0
+    member["ko_carry_new"] = 0
+    member["ko_carry_review"] = 0
     extras = maybe_streak_bonuses(member, daily)
     return {"ok": True, "already": False, "bonus": POINTS["checkin"], "streakBonuses": extras, "streak": streak}
 
@@ -711,6 +934,10 @@ def rate_word(member: dict, word_id: str, rating: str) -> dict:
     round_correct = int(rec.get("round_correct") or 0)
     on_curve = (rec.get("reps") or 0) > 0
     complete = False
+    # Already at the pass line (including 3 or 4 left over from when the line was 5).
+    # Do not let 「不认识」or「模糊」erase a round that has already been earned.
+    if round_correct >= ROUND_NEED:
+        rating = "know"
     if rating == "again":
         round_correct = 0
         lapses += 1
@@ -994,9 +1221,22 @@ def member_public(member: dict, include_plan: bool = False) -> dict:
         "studyPlanLabel": plan_label(member),
         "joinedDate": member["joined_date"],
     }
+    plan = plan_for(member)
+    public = {k: v for k, v in plan.items() if k not in ("remainingDue", "remainingNew", "daily", "_tracks")}
+    out["tracks"] = [
+        {
+            "id": track["id"],
+            "label": track["label"],
+            "vocabDone": track["vocabDone"],
+            "quizComplete": track["quizComplete"],
+            "done": bool(track["vocabDone"] and track["quizComplete"]),
+            "carryNew": track.get("carryNew") or 0,
+            "carryReview": track.get("carryReview") or 0,
+        }
+        for track in public["tracks"]
+    ]
     if include_plan:
-        plan = plan_for(member)
-        out["plan"] = {k: v for k, v in plan.items() if k not in ("remainingDue", "remainingNew", "daily", "_tracks")}
+        out["plan"] = public
     return out
 
 
@@ -1016,7 +1256,8 @@ def room_state(member: dict) -> dict:
             {
                 "type": "partner-missed",
                 "title": f"{partner_pub['name']}昨天没打卡了，按约定去催一下！",
-                "text": room["punishment_text"],
+                "text": room["punishment_text"]
+                + " 没做完的复习和新词会积到后面，每人、每门分开算，最多积压两天。",
             }
         )
     if me_pub["missedYesterday"] and not me_pub["checkinToday"]:
@@ -1365,22 +1606,35 @@ def import_member(member: dict, payload: dict) -> dict:
     db.execute("DELETE FROM word_progress WHERE member_id=?", (mid,))
     db.execute("DELETE FROM custom_words WHERE member_id=?", (mid,))
     db.execute("DELETE FROM daily WHERE member_id=?", (mid,))
+    today = today_str()
     for rec in data.get("progress") or []:
+        interval = curve_interval(rec.get("interval_days") or 0)
+        due_ts = rec.get("due_ts") or 0
+        reps = int(rec.get("reps") or 0)
+        status = rec.get("status") or "learning"
+        round_correct = int(rec.get("round_correct") or 0)
+        if round_correct >= ROUND_NEED:
+            settled = completed_round_update(interval, today)
+            interval = settled["interval_days"]
+            due_ts = settled["due_ts"]
+            status = settled["status"]
+            round_correct = 0
+            reps += 1
         db.execute(
             """INSERT INTO word_progress (member_id, word_id, interval_days, due_ts, reps, lapses, status, last_rating, last_reviewed, introduced_on, round_correct)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 mid,
                 rec["word_id"],
-                curve_interval(rec.get("interval_days") or 0),
-                rec.get("due_ts") or 0,
-                rec.get("reps") or 0,
+                interval,
+                due_ts,
+                reps,
                 rec.get("lapses") or 0,
-                rec.get("status") or "learning",
+                status,
                 rec.get("last_rating"),
                 rec.get("last_reviewed"),
                 rec.get("introduced_on"),
-                int(rec.get("round_correct") or 0),
+                round_correct,
             ),
         )
     for rec in data.get("customWords") or []:

@@ -1,8 +1,9 @@
-const CACHE = "jinbu-progress-v5";
+const CACHE = "jinbu-progress-v7";
 const ASSETS = [
   "./",
   "./index.html",
   "./css/app.css",
+  "./js/spell.js",
   "./js/api.js",
   "./js/app.js",
   "./manifest.json",

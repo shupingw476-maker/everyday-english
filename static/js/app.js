@@ -64,6 +64,18 @@
     return (meta && meta.quizCorrectPoints) || 15;
   }
 
+  function roundNeedOf(item) {
+    if (item && item.roundNeed) return item.roundNeed;
+    const plan = state && state.me && state.me.plan;
+    return (plan && plan.roundNeed) || 3;
+  }
+
+  function isEnglishPractice(item) {
+    if (!item || !item.word) return false;
+    if (item.track === "korean" || item.word.lang === "ko") return false;
+    return true;
+  }
+
   function playServerAudio(word, language) {
     try {
       if (speakAudio) speakAudio.pause();
@@ -104,12 +116,12 @@
     playServerAudio(word, language);
   }
 
-  function speakButton(word, lang) {
+  function speakButton(word, lang, quiet) {
     return el("button", {
       type: "button",
       class: "speak-btn",
       "data-speak": word || "",
-      "aria-label": "朗读 " + (word || ""),
+      "aria-label": quiet ? "朗读" : "朗读 " + (word || ""),
       onClick: (e) => playPronunciation(word, lang, e),
       onKeydown: (e) => e.stopPropagation(),
     }, [
@@ -499,7 +511,7 @@
           taskRow("做题", plan.quizDone, plan.quizTarget, null),
         ]),
         el("div", { class: "rule-box" }, plan.requirementText || "打卡规则：完成今天列出的复习、新词和题目，才算打卡。中断一天，连续学习会清零，第二天还要多做一份惩罚任务。"),
-        el("div", { class: "rule-box" }, plan.memoryText || "每个词本轮答对 5 次才过关。过关后按 1、2、4、7、15、30 天复习。"),
+        el("div", { class: "rule-box" }, plan.memoryText || "每个词本轮答对 3 次才过关。过关后按 1、2、4、7、15、30 天复习。"),
       ]),
       inviteCard(),
       el("div", { class: "card", style: { marginTop: "14px" } }, [
@@ -532,6 +544,10 @@
       el("div", { class: "nm" }, p.name),
       p.studyPlanLabel ? el("div", { class: "plan-line" }, p.studyPlanLabel) : null,
       el("div", { class: "row" }, [el("span", {}, "连续"), el("span", {}, p.streak + " 天")]),
+      ...((p.tracks || []).map((track) => el("div", { class: "row" }, [
+        el("span", {}, track.label),
+        el("span", {}, track.done ? "今天完成" : "还没完成"),
+      ]))),
       el("div", { class: "row" }, [el("span", {}, "积分"), el("span", {}, p.points + " · Lv." + p.level)]),
       p.checkinToday
         ? el("span", { class: "stamp yes" }, "今日已打卡")
@@ -580,6 +596,9 @@
       : (track.quizComplete ? "今天已完成" : "1 组（" + track.quizSize + " 题）");
     return el("div", { class: "track-block" }, [
       el("h3", { class: "track-name" }, title),
+      (track.carryNew || track.carryReview)
+        ? el("p", { class: "tiny muted" }, "含积压：复习 " + (track.carryReview || 0) + "，新词 " + (track.carryNew || 0) + "（最多两天）")
+        : null,
       taskRow(title + "复习", track.dueDone, track.dueTotal, track.dueTotal === 0 ? "今日无需复习" : null),
       taskRow(title + "新词", track.newDone, track.newTotal, track.newTotal === 0 ? "暂无新词" : null),
       taskRow(quizName, track.quizDone, track.quizTarget, quizHint),
@@ -817,6 +836,19 @@
     return session.items[session.index] || null;
   }
 
+  function activeSpell(item) {
+    const spell = session && session.spell;
+    if (!spell || !item || spell.wordId !== item.word.id) return null;
+    return spell;
+  }
+
+  function shownRound(item) {
+    const spell = activeSpell(item);
+    const pending = spell && spell.pendingResult;
+    if (pending) return { got: pending.roundCorrect || 0, need: pending.roundNeed || roundNeedOf(item) };
+    return { got: (item && item.roundCorrect) || 0, need: roundNeedOf(item) };
+  }
+
   function viewSession() {
     if (!session || !session.items) {
       return el("div", { class: "view" }, [
@@ -834,16 +866,35 @@
     const idx = session.index;
     const pct = Math.round((idx / total) * 100);
     const w = item.word;
+    const english = isEnglishPractice(item);
     const langLabel = w.lang === "ko" ? "韩语" : "英语";
+    const round = shownRound(item);
     const wrap = el("div", { class: "view" });
     wrap.append(
       el("button", { class: "back-link", type: "button", onClick: () => { session.listTab = "today"; go("words"); }, html: icon("back") + " 先离开" }),
-        el("div", { class: "session-top" }, [
+      el("div", { class: "session-top" }, [
         el("span", {}, langLabel + "  ·  " + (item.kind === "new" ? "新词" : "复习") + "  ·  " + (idx + 1) + " / " + total),
-        el("span", {}, "本轮 " + ((item.roundCorrect || 0) + "/" + (item.roundNeed || 5))),
+        el("span", {}, "本轮 " + round.got + "/" + round.need),
       ]),
       el("div", { class: "session-bar" }, [el("span", { style: { width: pct + "%" } })])
     );
+    if (english) {
+      wrap.append(englishPractice(item));
+    } else {
+      wrap.append(recallCard(item, langLabel));
+      wrap.append(
+        el("div", { class: "rate-row" + (session.flipped ? " show" : "") }, [
+          rateBtn("again", "不认识", "计数清零"),
+          rateBtn("hard", "模糊", "减 1 次"),
+          rateBtn("know", "认识", "+1 次"),
+        ])
+      );
+    }
+    return wrap;
+  }
+
+  function recallCard(item, langLabel) {
+    const w = item.word;
     const card = el("div", {
       class: "flashcard" + (session.flipped ? " flipped" : ""),
       role: "button",
@@ -857,40 +908,163 @@
         el("div", { class: "kind-tag" }, (item.kind === "new" ? "新词" : "复习") + " · " + langLabel),
         el("div", { class: "en-word" + (w.lang === "ko" ? " ko" : "") }, w.word),
         readingBlock(w),
-        roundBadge(item),
+        roundBadge(shownRound(item)),
         el("div", { class: "hint" }, "先试着回忆它的意思，再点开卡片"),
       ]),
       el("div", { class: "face back" }, [
         el("div", { class: "kind-tag" }, (item.kind === "new" ? "新词" : "复习") + " · " + langLabel),
         el("div", { class: "en-word" + (w.lang === "ko" ? " ko" : "") }, w.word),
         readingBlock(w),
-        roundBadge(item),
+        roundBadge(shownRound(item)),
         el("div", { class: "meaning" }, w.meaning),
         exampleBlock(w),
       ])
     );
-    wrap.append(el("div", { class: "flash-wrap" }, [card]));
-    wrap.append(
-      el("div", { class: "rate-row" + (session.flipped ? " show" : "") }, [
+    return el("div", { class: "flash-wrap" }, [card]);
+  }
+
+  function englishPractice(item) {
+    const w = item.word;
+    const spell = activeSpell(item);
+    const revealed = !!(spell && spell.result);
+    const ok = revealed && spell.result === "ok";
+    const card = el("div", {
+      class: "practice-card",
+      "data-practice": "spell",
+      "data-spell-result": revealed ? spell.result : null,
+    });
+    card.append(
+      el("div", { class: "kind-tag" }, (item.kind === "new" ? "新词" : "复习") + " · 英语"),
+      roundBadge(shownRound(item))
+    );
+    if (!revealed) {
+      card.append(
+        el("div", { class: "prompt-meaning" }, w.meaning || "（这个词还没有中文意思）"),
+        listenOnly(w),
+        spellEntry(item)
+      );
+    } else {
+      card.append(el("div", { class: "spell-result " + (ok ? "ok" : "no"), role: "status" }, ok ? "拼对了" : "还没拼对"));
+      if (!ok) {
+        card.append(el("p", { class: "spell-yours" }, "你写的是 " + (spell.draft || "")));
+        card.append(el("div", { class: "spell-correct" }, [
+          el("span", { class: "lab" }, "正确拼写"),
+          el("div", { class: "spell-answer" }, w.word),
+        ]));
+      } else {
+        card.append(el("div", { class: "en-word" }, w.word));
+      }
+      card.append(
+        readingBlock(w),
+        el("div", { class: "meaning" }, w.meaning),
+        exampleBlock(w)
+      );
+      if (ok) {
+        const gained = spell.pendingResult && spell.pendingResult.gained;
+        card.append(el("p", { class: "spell-note" }, "这一次已记为认识" + (gained ? "，+" + gained + " 分" : "") + "。"));
+      }
+    }
+    const wrap = el("div", { class: "flash-wrap" }, [card]);
+    if (revealed && ok) {
+      const result = spell.pendingResult;
+      const willStay = result && !result.roundComplete;
+      const more = session.items.length > session.index + 1 || willStay;
+      wrap.append(el("div", { class: "btn-row" }, [
+        el("button", {
+          class: "btn btn-primary",
+          type: "button",
+          onClick: () => continueAfterSpell(),
+        }, more ? "下一张" : "看小结"),
+      ]));
+    } else if (revealed) {
+      wrap.append(el("div", { class: "rate-row show" }, [
         rateBtn("again", "不认识", "计数清零"),
         rateBtn("hard", "模糊", "减 1 次"),
         rateBtn("know", "认识", "+1 次"),
-      ])
-    );
+      ]));
+    }
     return wrap;
   }
 
-  function roundBadge(item) {
-    const got = item.roundCorrect || 0;
-    const need = item.roundNeed || 5;
+  function listenOnly(w) {
+    return el("div", { class: "reading" }, [
+      el("span", { class: "lab" }, "读音"),
+      el("span", { class: "phon" }, "先听，再拼写"),
+      speakButton(w.word, "en", true),
+    ]);
+  }
+
+  function spellHintFor(item) {
+    const word = item && item.word;
+    const spell = window.JinbuSpell;
+    if (!word || !spell) return { pattern: "", missing: "" };
+    const key = word.id + ":" + (item.roundCorrect || 0);
+    session.hintByCard = session.hintByCard || {};
+    if (!session.hintByCard[key]) {
+      if (!session.hintSalt) session.hintSalt = Math.floor(Math.random() * 997) + 1;
+      let salt = session.hintSalt + (item.roundCorrect || 0) * 17;
+      const id = String(word.id || "");
+      for (let i = 0; i < id.length; i++) salt = (salt * 33 + id.charCodeAt(i)) >>> 0;
+      session.hintByCard[key] = spell.hintFor(word.word, salt);
+    }
+    return session.hintByCard[key];
+  }
+
+  function spellEntry(item) {
+    const hint = spellHintFor(item);
+    const pattern = hint.pattern || "";
+    const shown = pattern.split("").filter((ch) => ch !== (window.JinbuSpell && window.JinbuSpell.DASH)).length;
+    const short = [...String(item.word.word || "").trim()].length <= 3;
+    return el("div", { class: "spell-block" }, [
+      el("span", { class: "lab" }, "拼写"),
+      el("div", { class: "spell-row" }, [
+        el("span", { class: "spell-hint", "data-spell-hint": pattern }, pattern),
+        el("input", {
+          class: "spell-input",
+          type: "text",
+          inputmode: "text",
+          autocomplete: "off",
+          autocorrect: "off",
+          autocapitalize: "none",
+          spellcheck: "false",
+          "aria-label": "拼写这个单词",
+          placeholder: "补出空着的，或写全词",
+          value: session.spellDraft || "",
+          onInput: (e) => { session.spellDraft = e.target.value; },
+          onKeydown: (e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submitSpell();
+            }
+          },
+        }),
+      ]),
+      el("p", { class: "hint" }, short
+        ? "这个词比较短，只露出 " + shown + " 个字母。横线要自己补，也可以写整个单词。"
+        : "横线是没给出的字母。可以只补这些空，也可以写整个单词。"),
+      el("button", {
+        class: "btn btn-primary",
+        type: "button",
+        onClick: (e) => { e.stopPropagation(); submitSpell(); },
+      }, "确认拼写"),
+    ]);
+  }
+
+  function roundBadge(round) {
+    const got = (round && round.got) || 0;
+    const need = (round && round.need) || 3;
     return el("div", { class: "round-badge" }, "本轮 " + got + "/" + need);
   }
 
   function flipCard() {
     if (!session || session.flipped) return;
+    const item = currentCard();
+    if (isEnglishPractice(item)) return;
     session.flipped = true;
     render();
   }
+
   function rateBtn(rating, label, sub) {
     return el("button", {
       type: "button",
@@ -899,41 +1073,104 @@
     }, [label, el("small", {}, sub)]);
   }
 
+  async function submitSpell() {
+    const item = currentCard();
+    if (!item || !isEnglishPractice(item) || busy || session.spellLock) return;
+    const draft = session.spellDraft || "";
+    const spell = window.JinbuSpell;
+    if (!spell || !spell.foldSpell(draft)) {
+      toast("先写下这个单词的拼写");
+      return;
+    }
+    const hint = spellHintFor(item);
+    const correct = spell.isCorrect(item.word.word, draft, hint.missing);
+    if (!correct) {
+      session.spellLock = true;
+      session.spell = { wordId: item.word.id, draft: draft, result: "miss", recorded: false };
+      render();
+      return;
+    }
+    busy = true;
+    session.spellLock = true;
+    try {
+      const result = await API.rateWord(item.word.id, "know");
+      session.spell = {
+        wordId: item.word.id,
+        draft: draft,
+        result: "ok",
+        recorded: true,
+        pendingResult: result,
+      };
+      render();
+    } catch (err) {
+      session.spellLock = false;
+      toast(err.message || "保存失败");
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function continueAfterSpell() {
+    const item = currentCard();
+    const spell = activeSpell(item);
+    if (!item || !spell || !spell.recorded || !spell.pendingResult || busy) return;
+    busy = true;
+    try {
+      await absorbRateResult(item, "know", spell.pendingResult);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function rateCurrent(rating) {
     const item = currentCard();
-    if (!item || !session.flipped || busy) return;
+    if (!item || busy) return;
+    if (isEnglishPractice(item)) {
+      const spell = activeSpell(item);
+      if (!spell || spell.result !== "miss" || spell.recorded) return;
+    } else if (!session.flipped) {
+      return;
+    }
     busy = true;
     try {
       const result = await API.rateWord(item.word.id, rating);
-      session.results.points += result.gained || 0;
-      if (rating === "know") session.results.know += 1;
-      else if (rating === "hard") session.results.hard += 1;
-      else session.results.again += 1;
-      const id = item.word.id;
-      session.items = session.items.filter((card, i) => i <= session.index || card.word.id !== id);
-      if (!result.roundComplete) {
-        session.items.push({
-          word: item.word,
-          kind: item.kind,
-          track: item.track,
-          punishment: item.punishment,
-          roundCorrect: result.roundCorrect || 0,
-          roundNeed: result.roundNeed || 5,
-        });
-      } else {
-        const days = result.interval || 1;
-        toast("过关 " + (result.roundNeed || 5) + "/" + (result.roundNeed || 5) + "，" + (days <= 1 ? "明天再复习" : days + " 天后再复习"));
-      }
-      announceCheckin(result.checkin);
-      session.index += 1;
-      session.flipped = false;
-      if (session.index >= session.items.length) await finishSession();
-      else render();
+      await absorbRateResult(item, rating, result);
     } catch (err) {
       toast(err.message || "保存失败");
     } finally {
       busy = false;
     }
+  }
+
+  async function absorbRateResult(item, rating, result) {
+    session.spell = null;
+    session.spellLock = false;
+    session.spellDraft = "";
+    session.results.points += result.gained || 0;
+    if (rating === "know") session.results.know += 1;
+    else if (rating === "hard") session.results.hard += 1;
+    else session.results.again += 1;
+    const id = item.word.id;
+    session.items = session.items.filter((card, i) => i <= session.index || card.word.id !== id);
+    if (!result.roundComplete) {
+      session.items.push({
+        word: item.word,
+        kind: item.kind,
+        track: item.track,
+        punishment: item.punishment,
+        roundCorrect: result.roundCorrect || 0,
+        roundNeed: result.roundNeed || 3,
+      });
+    } else {
+      const days = result.interval || 1;
+      const need = result.roundNeed || 3;
+      toast("过关 " + need + "/" + need + "，" + (days <= 1 ? "明天再复习" : days + " 天后再复习"));
+    }
+    announceCheckin(result.checkin);
+    session.index += 1;
+    session.flipped = false;
+    if (session.index >= session.items.length) await finishSession();
+    else render();
   }
 
   async function finishSession() {
@@ -1073,17 +1310,22 @@
         type: "button",
         class: "choice" + (stateCls ? " " + stateCls : ""),
         disabled: quizRun.locked ? true : null,
-        onClick: () => pickChoice(i),
+        onClick: (e) => {
+          e.stopPropagation();
+          pickChoice(i);
+        },
       }, text);
       const spoken = choiceSpeakAt(q, i);
-      if (spoken) {
-        choices.append(el("div", { class: "choice-wrap" + (stateCls ? " " + stateCls : "") }, [
-          btn,
-          choicePronounce(spoken),
-        ]));
-      } else {
-        choices.append(btn);
-      }
+      const row = el("div", {
+        class: "choice-row" + (spoken ? " has-speak" : "") + (stateCls ? " " + stateCls : ""),
+        "data-choice": String(i),
+        onClick: (e) => {
+          if (e.target.closest && e.target.closest(".speak-btn")) return;
+          pickChoice(i);
+        },
+      }, [btn]);
+      if (spoken) row.append(choicePronounce(spoken));
+      choices.append(row);
     });
     wrap.append(choices);
     if (quizRun.locked) {
@@ -1198,7 +1440,7 @@
       ]),
       el("div", { class: "card" }, [
         el("h2", {}, "记忆方法"),
-        el("p", { class: "soft", style: { fontSize: "14px", marginTop: "8px" } }, (state.me && state.me.plan && state.me.plan.memoryText) || "每个词本轮答对 5 次才过关，之后按 1、2、4、7、15、30 天复习。"),
+        el("p", { class: "soft", style: { fontSize: "14px", marginTop: "8px" } }, (state.me && state.me.plan && state.me.plan.memoryText) || "每个词本轮答对 3 次才过关，之后按 1、2、4、7、15、30 天复习。"),
       ]),
       el("div", { class: "card" }, [
         el("div", { class: "card-title" }, [el("h2", {}, "积分规则")]),
@@ -1251,7 +1493,7 @@
         el("h2", {}, "每天的学习量"),
         fieldNum("每日新词数量（四级英语）", "dailyNew", me.settings.dailyNew, 5, 40),
         fieldNum("每日复习上限（四级英语）", "reviewCap", me.settings.reviewCap, 5, 80),
-        el("p", { class: "tiny muted" }, "复习排在新词前面，都要做完才能打卡。每个词要在本轮答对 5 次才过关。英语若昨天没打卡，第二天会多 20 个新词、多一组题。韩语每天 8 个新词、复习最多 24 个，小测每组 6 题；没打卡时韩语再加 8 个新词和一组小测。"),
+        el("p", { class: "tiny muted" }, "复习排在新词前面，都要做完才能打卡。每个词要在本轮答对 3 次才过关。若某天没打卡，没做完的复习和新词会积到后面，英语和韩语、两个人都分开算，积压最多两天的平时定额，并多做一组题。连续天数会清零。韩语每天 8 个新词、复习最多 24 个，小测每组 6 题。"),
       ]),
       el("div", { class: "card" }, [
         el("h2", {}, "打卡提醒"),
@@ -1415,7 +1657,7 @@
         exampleBlock(w),
         el("p", { class: "muted", style: { marginTop: "14px", fontSize: "13px" } },
           "状态：" + data.status +
-          "  ·  本轮 " + ((rec && rec.round_correct) || 0) + "/5" +
+          "  ·  本轮 " + ((rec && rec.round_correct) || 0) + "/" + roundNeedOf(null) +
           (rec && rec.reps ? "  ·  已过关 " + rec.reps + " 轮" : "  ·  还没有过关") +
           (rec && rec.interval_days ? "  ·  下次间隔 " + rec.interval_days + " 天" : "  ·  过关后从明天开始复习")
         ),
@@ -1522,6 +1764,12 @@
     $app.innerHTML = "";
     $app.append(view);
     window.scrollTo(0, 0);
+    const spellInput = $app.querySelector(".spell-input");
+    if (spellInput) {
+      spellInput.focus();
+      const end = spellInput.value.length;
+      try { spellInput.setSelectionRange(end, end); } catch (e) {}
+    }
   }
 
   async function boot() {
